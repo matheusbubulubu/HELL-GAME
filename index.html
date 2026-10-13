@@ -1,0 +1,1592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Through Hell — 10 Levels</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#050505; color:#eee; font-family: 'Courier New', monospace; display:flex; flex-direction:column; align-items:center; min-height:100vh; padding:16px; }
+  h1 { color:#ff2222; letter-spacing:4px; text-shadow:0 0 12px #ff0000; margin-bottom:4px; font-size:28px; }
+  p.sub { color:#888; font-size:13px; margin-bottom:10px; }
+  #wrap { position:relative; border:3px solid #444; box-shadow:0 0 30px #f003; }
+  canvas#game { display:block; width:960px; max-width:95vw; image-rendering:pixelated; background:#000; cursor:none; }
+  #hud { display:flex; gap:0; width:960px; max-width:95vw; background:#111; border:3px solid #444; border-top:none; font-size:16px; font-weight:bold; }
+  #hud div { flex:1; text-align:center; padding:8px 4px; border-right:2px solid #333; }
+  #hud div:last-child { border-right:none; }
+  #hud span { color:#ff3333; font-size:20px; }
+  #hud .ammo span { color:#ffcc00; }
+  #hud .kills span { color:#33ff66; }
+  #hud .coins span { color:#7ae0ff; }
+  #store { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(8,2,16,.94); text-align:center; padding:20px; z-index:5; }
+  #store.hidden { display:none; }
+  #store h2 { color:#c060ff; font-size:30px; letter-spacing:5px; margin-bottom:4px; text-shadow:0 0 18px #a030ff; }
+  #storeCoins { color:#7ae0ff; font-size:16px; font-weight:bold; margin-bottom:10px; }
+  .sItem { display:flex; gap:10px; align-items:center; text-align:left; background:#160a24; border:1px solid #4a2a6a; padding:8px 12px; margin:4px; width:540px; max-width:92%; font-size:13px; line-height:1.4; }
+  .sItem b { color:#ffcc00; }
+  .sItem span { color:#999; }
+  .sItem button { margin-left:auto; background:#5a1a8a; color:#fff; border:none; padding:8px 14px; font-family:inherit; font-weight:bold; cursor:pointer; white-space:nowrap; }
+  .sItem button:hover:not(:disabled) { background:#7a2aba; }
+  .sItem button:disabled { background:#333; color:#777; cursor:default; }
+  #storeClose { margin-top:10px; background:#333; color:#fff; border:none; padding:10px 26px; font-family:inherit; font-weight:bold; cursor:pointer; }
+  #storeClose:hover { background:#555; }
+  #hud .lvl span { color:#cc66ff; }
+  #overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(0,0,0,.85); text-align:center; padding:20px; }
+  #overlay.hidden { display:none; }
+  #overlay h2 { color:#ff2222; font-size:42px; letter-spacing:6px; margin-bottom:10px; text-shadow:0 0 20px red; }
+  #overlay p { color:#ccc; font-size:14px; line-height:1.6; max-width:600px; margin-bottom:14px; }
+  #overlay button { background:#ff2222; color:#fff; border:none; padding:12px 32px; font-size:18px; font-family:inherit; font-weight:bold; cursor:pointer; letter-spacing:2px; }
+  #overlay button:hover { background:#cc0000; }
+  #controls { margin-top:10px; color:#777; font-size:12px; text-align:center; line-height:1.7; }
+  #msg { position:absolute; top:14px; width:100%; text-align:center; color:#ffcc00; font-size:20px; font-weight:bold; text-shadow:0 0 8px black; pointer-events:none; }
+  #cross { position:absolute; left:50%; top:50%; width:8px; height:8px; margin:-4px; pointer-events:none; }
+  #cross:before, #cross:after { content:''; position:absolute; background:#0f0; }
+  #cross:before { left:3px; top:0; width:2px; height:8px; }
+  #cross:after { top:3px; left:0; width:8px; height:2px; }
+</style>
+</head>
+<body>
+<h1>THROUGH HELL</h1>
+<p class="sub">10 levels of hell — vanilla JS raycaster, no assets</p>
+<div id="wrap">
+  <canvas id="game" width="960" height="540"></canvas>
+  <div id="cross"></div>
+  <div id="msg"></div>
+  <div id="overlay">
+    <h2 id="ovTitle">THROUGH HELL</h2>
+    <p id="ovText"></p>
+    <button id="playBtn">DESCEND</button>
+  </div>
+  <div id="store" class="hidden">
+    <h2>SMUGGLER'S CACHE</h2>
+    <p id="storeCoins">◉ 0</p>
+    <div id="storeItems"></div>
+    <button id="storeClose">BACK TO HELL [B]</button>
+  </div>
+</div>
+<div id="hud">
+  <div class="lvl">LEVEL<br><span id="lv">1/10</span></div>
+  <div>HEALTH<br><span id="hp">100</span></div>
+  <div class="ammo">AMMO<br><span id="am">25</span></div>
+  <div class="kills">KILLS<br><span id="kl">0 / 4</span></div>
+  <div class="coins">COINS<br><span id="cn">0</span></div>
+</div>
+<div id="controls">Move mouse / swipe trackpad to turn (inverted). Two-finger swipe also turns. Click or Space shoots. WASD moves, SHIFT runs. L toggles precision mouse-lock. R restarts level. M toggles minimap. 0 ammo = knife (get close!). E uses the exit door once everything is dead. 1-6 weapons, Q cycles, B store.</div>
+
+<script>
+'use strict';
+// ================= LEVELS =================
+// '.' = floor, '1'..'4' = wall types. Rows are padded with solid wall to max width,
+// so hand-authored maps can't break the engine.
+const LEVELS = [
+{ name: "SECTOR 7 LAB", sub: "the specimens are loose.", view: 10, dark: 0.10, foes: 6, theme: 0,
+grid: [
+  "111111111111111111",
+  "1................1",
+  "1..22......33...1",
+  "1..22......33...1",
+  "1.....1111......1",
+  "1.....1111...4..1",
+  "1............4..1",
+  "1..11.......44..1",
+  "1..11...........1",
+  "1......2222.....1",
+  "1......2222..1..1",
+  "1..33.......1...1",
+  "1..33...........1",
+  "1.....44...22...1",
+  "1................1",
+  "111111111111111111",
+]},
+{ name: "DEAD CITY", sub: "rush hour never ended.", view: 9.5, dark: 0.20, foes: 8, theme: 1,
+grid: [
+  "1111111111111111111111",
+  "1........1...........1",
+  "1..222...1...333.....1",
+  "1..222...1...333..4..1",
+  "1........1........4..1",
+  "1...111111111..111...1",
+  "1.................1..1",
+  "1..444...1111.....1..1",
+  "1..444...1111........1",
+  "1.............11.....1",
+  "1..11...22...11..33..1",
+  "1..11...22........33.1",
+  "1.......22..........1",
+  "1....33......4444...1",
+  "1....33......4444...1",
+  "1...................1",
+  "1111111111111111111111",
+]},
+{ name: "BLOOD CHAPEL", sub: "it prays to itself here.", view: 9, dark: 0.30, foes: 9, theme: 2,
+grid: [
+  "1111111111111111111111",
+  "1......1.............1",
+  "1..33..1..222222..4..1",
+  "1..33.....222222..4..1",
+  "1......1.............1",
+  "1..11..1..333...11...1",
+  "1..11.....333...11...1",
+  "1....................1",
+  "1.....44444......33..1",
+  "1.....44444......33..1",
+  "1................33..1",
+  "1..22......11........1",
+  "1..22......11....44..1",
+  "1............1...44..1",
+  "1..3333......1.......1",
+  "1..3333..............1",
+  "1........2222....11..1",
+  "1........2222....11..1",
+  "1....................1",
+  "1....44..........33..1",
+  "1111111111111111111111",
+]},
+{ name: "BLACKWOOD SCHOOL", sub: "class is in session. forever.", view: 8.5, dark: 0.38, foes: 11, theme: 3,
+grid: [
+  "111111111111111111111111",
+  "1......................1",
+  "1..222..222...222..44..1",
+  "1..222..222...222..44..1",
+  "1......................1",
+  "1..222..222...222......1",
+  "1..222..222...222..44..1",
+  "1..................44..1",
+  "1......11111111........1",
+  "1......11111111...33...1",
+  "1.................33...1",
+  "1..44......11..........1",
+  "1..44......11....222...1",
+  "1............1...222...1",
+  "1..3333......1.........1",
+  "1..3333................1",
+  "1.........2222...11....1",
+  "1.........2222...11....1",
+  "1......................1",
+  "1....44...........33...1",
+  "111111111111111111111111",
+]},
+{ name: "THE SEWERS", sub: "do not drink the water.", view: 8, dark: 0.45, foes: 12, theme: 4,
+grid: [
+  "11111111111111111111111111",
+  "1......11........11......1",
+  "1..44..11..2222..11..33..1",
+  "1..44......2222......33..1",
+  "1......11........11......1",
+  "1..11..11..44....11..11..1",
+  "1..11......44........11..1",
+  "1......2222.....3333.....1",
+  "1......2222.....3333..4..1",
+  "1..33........11.......4..1",
+  "1..33...44...11..22......1",
+  "1.......44.......22..11..1",
+  "1...11......333......11..1",
+  "1...11......333..........1",
+  "1.......22......44...33..1",
+  "1..444..22......44...33..1",
+  "1..444..........11.......1",
+  "1......333......11..22...1",
+  "1......333..........22...1",
+  "1........................1",
+  "11111111111111111111111111",
+]},
+{ name: "THE FOUNDRY", sub: "the machines remember being men.", view: 7.5, dark: 0.50, foes: 14, theme: 5,
+grid: [
+  "11111111111111111111111111",
+  "1........................1",
+  "1..111...4444...111...3311",
+  "1..111...4444...111...3311",
+  "1........................1",
+  "1.....2222......2222.....1",
+  "1.....2222......2222..4411",
+  "1.....................4411",
+  "1..33....1111111....11...1",
+  "1..33....1111111....11...1",
+  "1........................1",
+  "1.....44.......33....222.1",
+  "1.....44.......33....222.1",
+  "1..11....................1",
+  "1..11....22222....44....1",
+  "1........22222....44....1",
+  "1........................1",
+  "1...333......11.....222..1",
+  "1...333......11.....222..1",
+  "1........................1",
+  "1..22.....4444....11..331",
+  "1..22.....4444....11..331",
+  "1........................1",
+  "11111111111111111111111111",
+]},
+{ name: "HOLLOW MANOR", sub: "the family never left.", view: 7, dark: 0.55, foes: 15, theme: 6,
+grid: [
+  "1111111111111111111111111111",
+  "1............11............1",
+  "1..222.......11.....333....1",
+  "1..222................333.1",
+  "1............11............1",
+  "1.....4444...11...2222.....1",
+  "1.....4444........2222..4..1",
+  "1.......................4..1",
+  "1..11...22222....3333......1",
+  "1..11...22222....3333...111",
+  "1.......................111",
+  "1......11......44..........1",
+  "1......11......44....222...1",
+  "1....................222...1",
+  "1..3333....1111......11....1",
+  "1..3333....1111......11....1",
+  "1..........................1",
+  "1....22......33.....44.....1",
+  "1....22......33.....44..2..1",
+  "1..........................1",
+  "1..44.....22222.....11...331",
+  "1..44.....22222.....11...331",
+  "1..........................1",
+  "1111111111111111111111111111",
+]},
+{ name: "SAINT VEX HOSPITAL", sub: "the patients are still here.", view: 6.5, dark: 0.62, foes: 17, theme: 7,
+grid: [
+  "1111111111111111111111111111",
+  "1.....11.......11.......11.1",
+  "1.....11..333..11..44...11.1",
+  "1.........333......44......1",
+  "1.....11.......11.......11.1",
+  "1.....11.......11.......11.1",
+  "1..........................1",
+  "1..222222....1111.....333..1",
+  "1..222222....1111.....333..1",
+  "1..........................1",
+  "1......44....22.....11.....1",
+  "1......44....22.....11..4..1",
+  "1.......................4..1",
+  "1..11.....33333....2222....1",
+  "1..11.....33333....2222....1",
+  "1..........................1",
+  "1.....222....11.....44.....1",
+  "1.....222....11.....44..331",
+  "1.......................331",
+  "1..33......11111.....11....1",
+  "1..33......11111.....11....1",
+  "1..........................1",
+  "1....44.....222.....33.....1",
+  "1....44.....222.....33.....1",
+  "1..........................1",
+  "1111111111111111111111111111",
+]},
+{ name: "THE SUNLESS PYRAMID", sub: "the dead do not rest here.", view: 6, dark: 0.68, foes: 19, theme: 8,
+grid: [
+  "111111111111111111111111111111",
+  "1......11.........11.........1",
+  "1..44..11..22222..11..333...1",
+  "1..44......22222......333.4.1",
+  "1......11.........11.....4..1",
+  "1..11..11..333....11..11....1",
+  "1..11......333........11..221",
+  "1......4444.....22222.....221",
+  "1......4444.....22222.......1",
+  "1..33........11........333..1",
+  "1..33...22...11..444..333..1",
+  "1.......22.......444....11..1",
+  "1...11......3333......11....1",
+  "1...11......3333.............1",
+  "1.......222......44...22..331",
+  "1..444..222......44...22..331",
+  "1..444..........11..........1",
+  "1......333......11..222.....1",
+  "1......333..........222..44.1",
+  "1..22.........333........44.1",
+  "1..22....11...333...11......1",
+  "1........11.........11...221",
+  "1....444......22........2211",
+  "1....444......22............1",
+  "1..........................1",
+  "111111111111111111111111111111",
+]},
+{ name: "THRONE OF THE BEAST", sub: "HE IS AWAKE. RUN.", view: 5.5, dark: 0.75, foes: 20, boss: true, theme: 9,
+grid: [
+  "111111111111111111111111111111",
+  "1......11.........11.........1",
+  "1..44..11..22222..11..333...1",
+  "1..44......22222......333.4.1",
+  "1......11.........11.....4..1",
+  "1..11..11..333....11..11....1",
+  "1..11......333........11..221",
+  "1......4444.....22222.....221",
+  "1......4444.....22222.......1",
+  "1.............11........333.1",
+  "1..3333......11....444.333.1",
+  "1..3333...........444...11.1",
+  "1.......................11.1",
+  "1.....111111...33333........1",
+  "1.....111111...33333...22.331",
+  "1......................22.331",
+  "1..44......22222.....11.....1",
+  "1..44......22222.....11..2221",
+  "1........................2221",
+  "1......3333...11......44....1",
+  "1......3333...11......44..111",
+  "1.......................1111",
+  "1...222.....4444....2222....1",
+  "1...222.....4444....2222..331",
+  "1........................331",
+  "1......3333......1111.......1",
+  "1..........................1",
+  "111111111111111111111111111111",
+]},
+];
+
+// ============ STATE ============
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const NUM_RAYS = 480;
+const COL_W = W / NUM_RAYS;
+const FOV = Math.PI / 3;
+
+let MAP = [], MW = 0, MH = 0;
+let enemies = [], pickups = [];
+let levelIdx = 0, kills = 0, totalKills = 0;
+let won = false, started = false, transition = 0;
+// ==== arsenal & economy: coins drop from kills, the store (B) sells hardware ====
+const WEAPONS = {
+  pump:   { name: 'SCRAP PUMP', key: '1', dmg: [115,70,45], cd: 0.3, auto: false, range: 10, tol: 1, price: 0, hi: 6500, dur: 0.26, vol: 0.55, thump: 110, desc: 'trusty spread. slow.' },
+  ar:     { name: 'AR-7', key: '2', dmg: [40,34,28], cd: 0.13, auto: true, range: 11, tol: 0.85, price: 180, hi: 8200, dur: 0.12, vol: 0.4, thump: 150, desc: 'hold trigger. hungry.' },
+  uzi:    { name: 'UZI', key: '3', dmg: [24,20,17], cd: 0.075, auto: true, range: 9, tol: 1.35, price: 300, hi: 9200, dur: 0.08, vol: 0.32, thump: 170, desc: 'bullet hose. wild.' },
+  sniper: { name: 'LONG SLEEP', key: '4', dmg: [340,320,280], cd: 1.2, auto: false, range: 15, tol: 0.55, price: 450, hi: 3800, dur: 0.5, vol: 0.7, thump: 65, desc: 'one shot, one silence.' },
+  dual:   { name: 'DOUBLE DOWN', key: '5', dmg: [60,50,40], cd: 0.22, auto: false, range: 10, tol: 1, price: 350, dual: true, hi: 7500, dur: 0.15, vol: 0.45, thump: 130, desc: 'twin chrome. twice the goodbye.' },
+  axe:    { name: 'THROWING AXE', key: '6', dmg: [100,95,85], cd: 0.8, auto: false, range: 3.6, tol: 1.4, price: 100, desc: 'chuck steel. comes with 3.' },
+};
+const owned = { pump: true };
+let cur = 'pump', wcd = 0, firing = false;
+let coins = 0, axes = 0, storeOpen = false;
+let showMap = false;
+let flash = 0, hurtFlash = 0, killFlash = 0, msgTimer = 0;
+let knifeSwing = 0, knifeCD = 0;   // last-resort blade timers
+let shakeT = 0, shakeMag = 0, dipT = 0, dipCool = 10, scareT = 8, heartT = 0;
+let bannerT = 0, bannerText = '', bannerSub = '';
+let particles = [];
+let elapsed = 0;
+
+const player = { x: 2.5, y: 2.5, a: 0.3, hp: 100, ammo: 25, alive: true };
+
+function showMsg(t, s=2) { document.getElementById('msg').textContent = t; msgTimer = s; }
+function cellAt(x, y) {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  if (ix < 0 || iy < 0 || ix >= MW || iy >= MH) return '1';
+  return MAP[iy][ix];
+}
+function isWall(x, y) { return cellAt(x, y) !== '.'; }
+function mulberry(seed) { return function() { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+function loadLevel(idx) {
+  const L = LEVELS[idx];
+  MW = Math.max(...L.grid.map(r => r.length));
+  MH = L.grid.length;
+  MAP = L.grid.map(r => (r + '1'.repeat(MW)).slice(0, MW).split(''));
+  // spawn: first open cell near top-left
+  player.x = 2.5; player.y = 1.5;
+  if (isWall(player.x, player.y)) {
+    outer: for (let y = 1; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) {
+      if (MAP[y][x] === '.' && MAP[y][x+1] === '.') { player.x = x + 0.5; player.y = y + 0.5; break outer; }
+    }
+  }
+  player.a = 0.3;
+  // theme: walls, corpse, light and monsters for this environment
+  const T = THEMES[L.theme]; TH = T;
+  for (let k = 1; k <= 4; k++) { const w = T.walls[k - 1]; TEX[String(k)] = wallTex(w[0], w[1], w[2], w[3]); }
+  deadTex = makeTex(g => {
+    g.clearRect(0,0,64,64);
+    g.fillStyle = '#0c0c0c'; g.beginPath(); g.ellipse(32,50,24,10,0,0,7); g.fill();
+    g.fillStyle = T.base.head; g.beginPath(); g.arc(14,52,6,0,7); g.fill();
+    g.fillStyle = '#050505'; g.fillRect(12,50,4,5);
+    bloodSpeck(g, 26, T.blood);
+  });
+  // gather floor cells far from spawn
+  const cells = [];
+  for (let y = 1; y < MH - 1; y++) for (let x = 1; x < MW - 1; x++) {
+    if (MAP[y][x] !== '.') continue;
+    const d = Math.hypot(x + 0.5 - player.x, y + 0.5 - player.y);
+    if (d > 4) cells.push({ x: x + 0.5, y: y + 0.5, d });
+  }
+  const rnd = mulberry(1234 + idx * 777);
+  cells.sort(() => rnd() - 0.5);
+  cells.sort((a, b) => b.d - a.d); // creepiest: farthest first, then jittered
+  enemies = [];
+  const hpBase = 100 + idx * 15, spBase = 1.55 + idx * 0.1, dmgBase = 1 + idx * 0.16;
+  let placed = 0, ci = 0;
+  const pushMob = (c, ti, vi) => {
+    const TT = THEMES[ti], V = TT.vars[vi % TT.vars.length];
+    enemies.push({
+      x: c.x, y: c.y, alive: true, cool: 0, anim: 0,
+      hp: Math.round(hpBase * (V.hp || 1)),
+      speed: spBase * (V.sp || 1) * (0.9 + rnd() * 0.25),
+      dmg: dmgBase, kind: 'mob', scale: V.sc || 1,
+      spr: getFrames(ti, vi % TT.vars.length), glow: TT.glow, blood: TT.blood, kills: TT.kills,
+    });
+    placed++;
+  };
+  if (L.boss) {
+    // the whole court of nightmares at once — then the PALE KING himself
+    while (placed < L.foes && ci < cells.length) {
+      const c = cells[ci++];
+      if (enemies.some(e => Math.hypot(e.x - c.x, e.y - c.y) < 2.5)) continue;
+      pushMob(c, Math.floor(rnd() * 9), placed);
+    }
+    const bc = cells.find(c => !enemies.some(e => Math.hypot(e.x - c.x, e.y - c.y) < 3)) || cells[0];
+    if (bc) enemies.push({ x: bc.x, y: bc.y, alive: true, cool: 0, anim: 0, hp: 900, speed: 2.35,
+      dmg: dmgBase * 1.6, kind: 'boss', scale: 1.6, spr: mobPair(BOSS_P),
+      glow: [255,30,0], blood: '#ff0000', kills: ['THE KING FALLS!'] });
+  } else {
+    while (placed < L.foes && ci < cells.length) {
+      const c = cells[ci++];
+      if (enemies.some(e => Math.hypot(e.x - c.x, e.y - c.y) < 2.5)) continue;
+      pushMob(c, L.theme, placed);
+    }
+  }
+  // exit door: farthest wall cell with a floor neighbor — findable, sealed for now
+  door = null;
+  let bestDoor = null, bestDD = -1;
+  for (let y = 0; y < MH; y++) for (let x = 0; x < MW; x++) {
+    if (MAP[y][x] === '.') continue;
+    const floorN = (y > 0 && MAP[y-1][x] === '.') || (MAP[y+1] && MAP[y+1][x] === '.') || (MAP[y][x-1] === '.') || (MAP[y][x+1] === '.');
+    if (!floorN) continue;
+    const dd = Math.hypot(x + 0.5 - player.x, y + 0.5 - player.y) + rnd() * 3;
+    if (dd > bestDD) { bestDD = dd; bestDoor = { mx: x, my: y }; }
+  }
+  if (bestDoor) door = { mx: bestDoor.mx, my: bestDoor.my, x: bestDoor.mx + 0.5, y: bestDoor.my + 0.5, open: false };
+  pickups = [];
+  const nAmmo = 4 + idx, nMed = 2 + Math.floor(idx / 2);
+  let need = nAmmo + nMed;
+  while (need > 0 && ci < cells.length) {
+    const c = cells[ci++];
+    if (enemies.some(e => Math.hypot(e.x - c.x, e.y - c.y) < 1.2)) continue;
+    pickups.push({ x: c.x, y: c.y, type: need > nMed ? 'ammo' : 'health', taken: false });
+    need--;
+  }
+  kills = 0; totalKills = enemies.length;
+  bannerText = 'LEVEL ' + (idx + 1) + ' — ' + L.name;
+  bannerSub = L.sub;
+  bannerT = 3.5;
+  updateHUD();
+}
+
+// ============ TEXTURES ============
+function makeTex(fn) { const c = document.createElement('canvas'); c.width = c.height = 64; fn(c.getContext('2d')); return c; }
+function bloodSpeck(g, n, col) { g.fillStyle = col; for (let i = 0; i < n; i++) g.fillRect(Math.random()*64, Math.random()*64, 2, 3); }
+const TEX = {};   // wall textures — rebuilt per level from its theme (see loadLevel)
+// ============ THEMES: one environment + monster set per level ============
+// wall patterns: brick | panel | tile | wood | stone | metal | locker | glass | hazard
+function wallTex(base, dark, accent, pat) {
+  return makeTex(g => {
+    g.fillStyle = base; g.fillRect(0,0,64,64);
+    g.fillStyle = dark;
+    if (pat === 'brick') {
+      for (let y = 0; y < 64; y += 16) { g.fillRect(0, y, 64, 3); for (let x = ((y / 16) % 2) * 16; x < 64; x += 32) g.fillRect(x, y, 3, 16); }
+    } else if (pat === 'panel') {
+      for (let x = 0; x <= 64; x += 32) g.fillRect(x, 0, 2, 64);
+      for (let y = 0; y <= 64; y += 32) g.fillRect(0, y, 64, 2);
+      g.fillStyle = accent;
+      for (let x = 6; x < 64; x += 32) for (let y = 6; y < 64; y += 32) g.fillRect(x, y, 3, 3);
+    } else if (pat === 'tile') {
+      for (let y = 0; y < 64; y += 16) for (let x = 0; x < 64; x += 16) if ((x + y) / 16 % 2) g.fillRect(x, y, 16, 16);
+    } else if (pat === 'wood') {
+      for (let x = 0; x < 64; x += 11) g.fillRect(x, 0, 2, 64);
+      g.fillStyle = accent;
+      for (let i = 0; i < 24; i++) g.fillRect(Math.random()*64, Math.random()*64, 1, 4);
+    } else if (pat === 'stone') {
+      for (let y = 0; y <= 64; y += 32) g.fillRect(0, y, 64, 3);
+      g.fillRect(32, 0, 3, 32); g.fillRect(16, 32, 3, 32); g.fillRect(48, 32, 3, 32);
+      g.fillStyle = accent; g.fillRect(8, 10, 2, 12); g.fillRect(40, 44, 2, 10);
+    } else if (pat === 'metal') {
+      g.fillRect(0, 20, 64, 3); g.fillRect(0, 44, 64, 3);
+      g.fillStyle = accent;
+      for (let i = 0; i < 12; i++) g.fillRect(Math.random()*64, 0, 2, 64);
+      g.fillStyle = dark;
+      for (let x = 8; x < 64; x += 24) { g.fillRect(x, 6, 3, 3); g.fillRect(x, 51, 3, 3); }
+    } else if (pat === 'locker') {
+      for (let x = 0; x < 64; x += 16) {
+        g.fillRect(x, 0, 2, 64);
+        g.fillStyle = accent;
+        g.fillRect(x+4, 6, 8, 2); g.fillRect(x+4, 10, 8, 2); g.fillRect(x+4, 14, 8, 2);
+        g.fillRect(x+11, 40, 3, 8);
+        g.fillStyle = dark;
+      }
+    } else if (pat === 'glass') {
+      g.fillRect(0, 0, 64, 64);
+      g.fillStyle = base;
+      g.fillRect(4, 4, 24, 24); g.fillRect(36, 4, 24, 24); g.fillRect(4, 36, 24, 24); g.fillRect(36, 36, 24, 24);
+      g.fillStyle = accent; g.fillRect(4, 26, 24, 3); g.fillRect(36, 26, 24, 3);
+    } else if (pat === 'hazard') {
+      g.fillStyle = accent;
+      for (let x = -64; x < 64; x += 16) { g.beginPath(); g.moveTo(x,64); g.lineTo(x+32,0); g.lineTo(x+40,0); g.lineTo(x+8,64); g.fill(); }
+    }
+    bloodSpeck(g, 14, 'rgba(120,8,8,.75)');
+  });
+}
+// Generic monster painter. P: torso/tw/bw/ty/byy, detail, limb/limbW, arms(down|fwd),
+// legs bool, head/headY/headW/headH, eyes(hollow|almond|glow|skull|visor), eyeCol,
+// maw(scream|grin|drool), mawCol, tent+tentCol+tents (behind), extra(horns|ant|fins|crown).
+function paintMob(g, f, P) {
+  g.clearRect(0,0,64,64);
+  const cx = 32, ph = f % 4;
+  const stride = [0, 3, 0, -3][ph];     // walk-cycle articulation
+  const bob = [0, -1.5, 0, 1][ph];
+  const sw = (ph === 1 || ph === 2) ? 1 : -1;
+  g.lineCap = 'round';
+  g.save(); g.translate(0, bob);
+  if (P.tent) {
+    for (let i = 0; i < (P.tents || 8); i++) {
+      const side = i % 2 ? 1 : -1, k = Math.ceil(i / 2);
+      const x0 = cx + side * (4 + k * 2), y0 = 24 - k;
+      const lift = 22 - k * 3 + sw * ((i % 3) - 1) * 2;
+      g.strokeStyle = P.tentCol; g.lineWidth = Math.max(2, 5 - k * 0.8);
+      g.beginPath(); g.moveTo(x0, y0);
+      g.quadraticCurveTo(x0 + side * (10 + k * 7), y0 - lift * 0.5, x0 + side * 4 + sw * (3 + (i * 5) % 4), Math.max(2, y0 - lift));
+      g.stroke();
+    }
+  }
+  const lw = P.limbW || 4, hips = P.hips || 42;
+  if (P.legs !== false) {
+    g.strokeStyle = P.limb; g.lineWidth = lw + 1;
+    g.beginPath(); g.moveTo(cx - 4, hips); g.lineTo(cx - 6 + sw + stride, 63 - Math.max(0, stride)); g.stroke();
+    g.beginPath(); g.moveTo(cx + 4, hips); g.lineTo(cx + 6 - sw - stride, 63 - Math.max(0, -stride)); g.stroke();
+  } else {
+    g.fillStyle = P.torso;   // floating wisp-tail for ghosts
+    g.beginPath(); g.moveTo(cx - 8, 40); g.lineTo(cx + 8, 40); g.lineTo(cx + sw * 3, 62); g.closePath(); g.fill();
+  }
+  const tw = P.tw || 11, bw = P.bw || 6, ty = P.ty || 20, byy = P.byy || 44;
+  g.fillStyle = P.torso;
+  g.beginPath(); g.moveTo(cx - tw, ty); g.lineTo(cx + tw, ty); g.lineTo(cx + bw, byy); g.lineTo(cx - bw, byy); g.closePath(); g.fill();
+  if (P.detail === 'shirt') {
+    g.fillStyle = P.detailCol || '#cfcfcf';
+    g.beginPath(); g.moveTo(cx - 4, ty - 2); g.lineTo(cx + 4, ty - 2); g.lineTo(cx, ty + 8); g.closePath(); g.fill();
+    g.fillStyle = '#000'; g.fillRect(cx - 1, ty, 2, 10);
+  } else if (P.detail === 'ribs') {
+    g.fillStyle = 'rgba(0,0,0,.55)';
+    for (let y = ty + 6; y < byy - 2; y += 5) g.fillRect(cx - bw + 1, y, bw * 2 - 2, 2);
+  } else if (P.detail === 'tatter') {
+    g.fillStyle = P.detailCol || '#3a3a3a';
+    for (let i = 0; i < 5; i++) g.fillRect(cx - tw + 1 + i * 4, byy - 8, 3, 8 + ((i * 7) % 5));
+  } else if (P.detail === 'visor') {
+    g.fillStyle = P.detailCol || '#f00'; g.fillRect(cx - tw + 2, ty + 6, tw * 2 - 4, 5);
+  } else if (P.detail === 'band') {
+    g.fillStyle = P.detailCol || '#d8d0c0';
+    for (let y = ty + 2; y < byy; y += 7) g.fillRect(cx - tw, y, tw * 2, 3);
+  }
+  g.strokeStyle = P.limb; g.lineWidth = lw;
+  if (P.arms === 'fwd') {
+    g.beginPath(); g.moveTo(cx - 8, 26); g.lineTo(cx - 17, 34 + stride * 0.6); g.stroke();
+    g.beginPath(); g.moveTo(cx + 8, 26); g.lineTo(cx + 17, 34 - stride * 0.6); g.stroke();
+  } else {
+    g.beginPath(); g.moveTo(cx - tw + 1, 22); g.lineTo(cx - tw - 4 + sw - stride, 48); g.stroke();
+    g.beginPath(); g.moveTo(cx + tw - 1, 22); g.lineTo(cx + tw + 4 - sw + stride, 48); g.stroke();
+  }
+  const hy = P.headY || 11, hw = P.headW || 6, hh = P.headH || 8, ex = cx + sw * 0.7;
+  g.fillStyle = P.head;
+  g.beginPath(); g.ellipse(ex, hy, hw, hh, 0, 0, 7); g.fill();
+  if (P.eyes === 'hollow') { g.fillStyle = '#050505'; g.fillRect(ex - 4, hy - 3, 3, 3); g.fillRect(ex + 1, hy - 3, 3, 3); }
+  else if (P.eyes === 'almond') {
+    g.fillStyle = '#000';
+    g.beginPath(); g.ellipse(ex - 3, hy - 1, 2.5, 4, 0.4, 0, 7); g.fill();
+    g.beginPath(); g.ellipse(ex + 3, hy - 1, 2.5, 4, -0.4, 0, 7); g.fill();
+  }
+  else if (P.eyes === 'glow') { g.fillStyle = P.eyeCol || '#fff'; g.fillRect(ex - 4, hy - 2, 3, 2); g.fillRect(ex + 1, hy - 2, 3, 2); }
+  else if (P.eyes === 'skull') {
+    g.fillStyle = '#000';
+    g.beginPath(); g.arc(ex - 2.5, hy - 1, 2.2, 0, 7); g.fill();
+    g.beginPath(); g.arc(ex + 2.5, hy - 1, 2.2, 0, 7); g.fill();
+    g.fillRect(ex - 1, hy + 2, 2, 3);
+  }
+  else if (P.eyes === 'visor') { g.fillStyle = '#f00'; g.fillRect(ex - 5, hy - 2, 10, 3); }
+  if (P.maw === 'scream') { g.fillStyle = P.mawCol || '#1a0000'; g.beginPath(); g.ellipse(ex, hy + 4, 2.5, 4, 0, 0, 7); g.fill(); }
+  else if (P.maw === 'grin') {
+    g.fillStyle = '#000'; g.fillRect(ex - 4, hy + 3, 8, 3);
+    g.fillStyle = '#ddd'; for (let x = ex - 4; x < ex + 4; x += 2) g.fillRect(x, hy + 3, 1, 3);
+  } else if (P.maw === 'drool') {
+    g.fillStyle = '#000'; g.beginPath(); g.ellipse(ex, hy + 4, 3, 2.5, 0, 0, 7); g.fill();
+    g.fillRect(ex - 2, hy + 5, 1, 4); g.fillRect(ex + 2, hy + 5, 1, 3);
+  }
+  if (P.extra === 'horns') {
+    g.fillStyle = P.extraCol;
+    g.beginPath(); g.moveTo(ex - hw + 1, hy - hh + 2); g.lineTo(ex - hw - 3, hy - hh - 6); g.lineTo(ex - hw + 4, hy - hh); g.fill();
+    g.beginPath(); g.moveTo(ex + hw - 1, hy - hh + 2); g.lineTo(ex + hw + 3, hy - hh - 6); g.lineTo(ex + hw - 4, hy - hh); g.fill();
+  } else if (P.extra === 'ant') {
+    g.strokeStyle = P.extraCol; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(ex - 3, hy - hh + 1); g.quadraticCurveTo(ex - 6, hy - hh - 6, ex - 8 + sw, hy - hh - 9); g.stroke();
+    g.beginPath(); g.moveTo(ex + 3, hy - hh + 1); g.quadraticCurveTo(ex + 6, hy - hh - 6, ex + 8 - sw, hy - hh - 9); g.stroke();
+    g.fillStyle = P.eyeCol || '#8f8'; g.fillRect(ex - 9 + sw, hy - hh - 11, 2, 2); g.fillRect(ex + 7 - sw, hy - hh - 11, 2, 2);
+  } else if (P.extra === 'fins') {
+    g.fillStyle = P.extraCol;
+    g.beginPath(); g.moveTo(ex - hw, hy - 2); g.lineTo(ex - hw - 6, hy - 6 + sw); g.lineTo(ex - hw, hy + 3); g.fill();
+    g.beginPath(); g.moveTo(ex + hw, hy - 2); g.lineTo(ex + hw + 6, hy - 6 - sw); g.lineTo(ex + hw, hy + 3); g.fill();
+  } else if (P.extra === 'crown') {
+    g.fillStyle = P.extraCol;
+    g.fillRect(ex - hw, hy - hh - 4, hw * 2, 4);
+    for (let x = ex - hw; x < ex + hw; x += 4) g.fillRect(x, hy - hh - 8, 2, 5);
+    g.fillStyle = '#f00'; g.fillRect(ex - 1, hy - hh - 3, 3, 3);
+  }
+  g.restore();   // end walk-bob
+}
+function mobPair(P) { return [0, 1, 2, 3].map(ph => makeTex(g => paintMob(g, ph, P))); }   // 4-frame walk cycle
+
+const THEMES = [
+// 0 — LAB: grey aliens with black almond eyes and antennae
+{ walls: [['#c8ccd0','#7a8088','#3a8a8a','panel'],['#9ab8b0','#5a7878','#2a4a4a','panel'],['#6a7078','#3a4048','#8a2a2a','metal'],['#22323c','#0e1418','#3ae0e0','glass']],
+  ceil: [8,12,14], floor: [26,32,36], fog: [40,140,130], fogK: 1, glow: [140,255,140], blood: '#3aff3a',
+  base: { torso: '#5a6a5e', tw: 8, bw: 5, limb: '#5a6a5e', limbW: 3, head: '#9aa89c', headY: 12, headW: 7, headH: 10, eyes: 'almond', maw: null, extra: 'ant', extraCol: '#3a4a3e', eyeCol: '#8ff08f' },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.75, sp: 1.35, sc: 0.82, ov: { head: '#c4d4c4', torso: '#6a7a6a', limb: '#6a7a6a' } },
+    { hp: 1.6, sp: 0.8, sc: 1.28, ov: { head: '#6a9a4a', torso: '#3a6a2a', limb: '#3a6a2a' } }],
+  kills: ['SPECIMEN DOWN.', 'IT BLEEDS GREEN.', 'BACK IN THE TANK.'] },
+// 1 — CITY: shambling zombies, arms outstretched
+{ walls: [['#2a2a2e','#141416','#8a8a2a','stone'],['#5a2a22','#331512','#141414','brick'],['#6a6a6a','#3f3f3f','#222222','panel'],['#1c1c1c','#000000','#c85010','stone']],
+  ceil: [6,6,10], floor: [18,18,22], fog: [150,110,40], fogK: 1, glow: [255,220,80], blood: '#7a0a0a',
+  base: { torso: '#3a4a3a', tw: 11, bw: 7, detail: 'tatter', detailCol: '#2a2a3a', limb: '#5a7a4a', arms: 'fwd', head: '#6a8a5a', headW: 6.5, headH: 7, eyes: 'glow', eyeCol: '#ffe95a', maw: 'drool' },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.8, sp: 1.3, sc: 0.9, ov: { head: '#7a9a6a', limb: '#7a9a6a' } },
+    { hp: 1.6, sp: 0.78, sc: 1.3, ov: { torso: '#4a5a3a', head: '#5a6a4a' } }],
+  kills: ['BACK TO THE GRAVE.', 'IT STOPS TWITCHING.', 'DOUBLE TAP.'] },
+// 2 — CHURCH: horned red demons with grins
+{ walls: [['#5a5a5e','#2e2e32','#8a8a8a','stone'],['#3a2418','#1c100a','#0a0604','wood'],['#4a1212','#280808','#7a1e1e','stone'],['#8a6a2a','#4a3a12','#ffcc66','metal']],
+  ceil: [10,6,8], floor: [30,20,14], fog: [150,15,15], fogK: 1.1, glow: [255,60,20], blood: '#cc0000',
+  base: { torso: '#8a1414', tw: 12, bw: 7, limb: '#8a1414', limbW: 5, head: '#a01818', headW: 6, headH: 8, eyes: 'glow', eyeCol: '#ffe95a', maw: 'grin', extra: 'horns', extraCol: '#2a0a0a' },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.8, sp: 1.3, sc: 0.82, ov: { head: '#c03030', torso: '#a02020', limb: '#a02020' } },
+    { hp: 1.7, sp: 0.75, sc: 1.32, ov: { torso: '#5a0a0a', head: '#701010', limb: '#5a0a0a' } }],
+  kills: ['BEGONE, FIEND.', 'HOLY WORK.', 'IT BURNS.'] },
+// 3 — SCHOOL: floating shades with pale moon-faces (ghosts — clearly not of this world)
+{ walls: [['#3a6a4a','#1e3a26','#c8c8c8','locker'],['#1e3a34','#0e1e1c','#d8d8d8','panel'],['#b8ac98','#7a7264','#5a2a2a','tile'],['#6a3a2a','#3a1e14','#111111','brick']],
+  ceil: [14,14,12], floor: [40,34,26], fog: [110,120,100], fogK: 1, glow: [220,220,255], blood: '#a0a0c0',
+  base: { torso: '#0e0e14', tw: 8, bw: 3, ty: 22, limb: '#0e0e14', limbW: 3, legs: false, head: '#e8e4da', headY: 12, headW: 6, headH: 7, eyes: 'glow', eyeCol: '#ffffff', maw: 'scream', mawCol: '#000000' },
+  vars: [{ hp: 1, sp: 1, sc: 0.66, ov: {} },
+    { hp: 0.7, sp: 1.4, sc: 0.58, ov: { head: '#f4f4ff' } },
+    { hp: 1.5, sp: 0.8, sc: 0.8, ov: { torso: '#161626', head: '#d0d0e8' } }],
+  kills: ['HUSH NOW.', 'IT UNRAVELS.', 'RECESS IS OVER.'] },
+// 4 — SEWERS: the drowned, finned and drooling
+{ walls: [['#2a5a34','#142e1a','#4aff7a','brick'],['#2e3232','#161818','#0a0a0a','panel'],['#4a3a28','#241c12','#1a5a3a','metal'],['#1e4a3a','#0e241c','#7ae09a','stone']],
+  ceil: [6,10,8], floor: [14,24,18], fog: [30,140,70], fogK: 1, glow: [120,255,220], blood: '#1a6a4a',
+  base: { torso: '#2a5a4a', tw: 10, detail: 'tatter', detailCol: '#1a3a2a', limb: '#2a5a4a', head: '#3a7a5a', eyes: 'glow', eyeCol: '#aaffee', maw: 'drool', extra: 'fins', extraCol: '#1a3a3a' },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.8, sp: 1.3, sc: 0.88, ov: { head: '#4a9a6a', limb: '#4a9a6a' } },
+    { hp: 1.6, sp: 0.78, sc: 1.3, ov: { torso: '#1a4a3a', head: '#2a5a48' } }],
+  kills: ['DRAINED.', 'BACK IN THE MUCK.', 'IT GURGLES OUT.'] },
+// 5 — FACTORY: rusted automatons with red visors
+{ walls: [['#5a4028','#2e2012','#c87810','metal'],['#3a3f46','#1e2126','#101216','panel'],['#6a6a10','#3a3a08','#111111','hazard'],['#4a2620','#241210','#0c0c0c','brick']],
+  ceil: [12,8,6], floor: [26,18,12], fog: [170,70,15], fogK: 1, glow: [255,80,20], blood: '#c87810',
+  base: { torso: '#5a4a34', tw: 12, bw: 10, ty: 22, detail: 'visor', detailCol: '#ff2200', limb: '#4a3a28', limbW: 5, head: '#6a5a40', headY: 13, headW: 6, headH: 6, eyes: 'visor', maw: null },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.75, sp: 1.35, sc: 0.82, ov: { torso: '#6a5a40', head: '#7a6a4c' } },
+    { hp: 1.7, sp: 0.72, sc: 1.32, ov: { torso: '#3a2e1e', head: '#4a3e28' } }],
+  kills: ['SCRAPPED.', 'POWERED DOWN.', 'RUST IN PIECES.'] },
+// 6 — MANOR: floating specters, hollow-eyed
+{ walls: [['#4a2e1c','#241408','#0e0804','wood'],['#4a1626','#260a12','#8a2a3a','stone'],['#3a3050','#1c1828','#8a80c0','panel'],['#8a8578','#4a463e','#2a2018','tile']],
+  ceil: [10,8,14], floor: [26,18,20], fog: [90,50,140], fogK: 1, glow: [180,160,255], blood: '#8a7ae0',
+  base: { torso: '#1a1a24', tw: 10, bw: 8, limb: '#1a1a24', legs: false, head: '#d8d4c8', headW: 5.5, headH: 7, eyes: 'hollow', maw: 'scream', mawCol: '#000000' },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.75, sp: 1.35, sc: 0.85, ov: { head: '#e8e4da' } },
+    { hp: 1.6, sp: 0.78, sc: 1.28, ov: { torso: '#101018', head: '#b8b4a8' } }],
+  kills: ['LAID TO REST.', 'THE HOUSE IS QUIETER.', 'ASHES TO ASHES.'] },
+// 7 — HOSPITAL: the bandaged patients
+{ walls: [['#b8bcbe','#7a7e80','#8a0808','tile'],['#7ab8a8','#3e6a60','#e8f0ec','panel'],['#6a8a8a','#3a4a4a','#d8e2e2','wood'],['#4a4e52','#242628','#7a0a0a','metal']],
+  ceil: [16,18,18], floor: [30,34,34], fog: [140,160,160], fogK: 0.9, glow: [255,255,255], blood: '#aa0000',
+  base: { torso: '#b8b0a0', detail: 'band', detailCol: '#d8d0c0', limb: '#b0a898', head: '#c8c0b0', eyes: 'hollow', maw: 'scream', mawCol: '#330000' },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.8, sp: 1.3, sc: 0.9, ov: { head: '#d8d0c0' } },
+    { hp: 1.6, sp: 0.78, sc: 1.28, ov: { torso: '#8a8078', head: '#9a9284' } }],
+  kills: ['FLATLINE.', 'DISCHARGED.', 'NO VISITORS NOW.'] },
+// 8 — PYRAMID: linen-wrapped mummies, one wears gold
+{ walls: [['#a88f5e','#6a5636','#e8d090','brick'],['#3a3226','#1c1812','#c8a848','stone'],['#8a6a2a','#4a3a12','#ffe97a','metal'],['#7a6a48','#423a26','#2a2012','panel']],
+  ceil: [14,10,6], floor: [48,36,20], fog: [150,115,60], fogK: 1, glow: [255,200,100], blood: '#b89030',
+  base: { torso: '#a89878', detail: 'band', detailCol: '#c8b898', limb: '#a89878', arms: 'fwd', head: '#b8a888', headW: 5.5, headH: 7, eyes: 'hollow', maw: null },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.8, sp: 1.3, sc: 0.9, ov: { head: '#c8b898', torso: '#b8a888', limb: '#b8a888' } },
+    { hp: 1.7, sp: 0.75, sc: 1.3, ov: { head: '#d8a832', torso: '#8a7848', limb: '#8a7848', eyes: 'glow', eyeCol: '#ff2200' } }],
+  kills: ['BACK TO THE SARCOPHAGUS.', 'DUST TO DUST.', 'THE CURSE LIFTS.'] },
+// 9 — THRONE: the PALE KING (crowned, tentacled) + a horde of every nightmare
+{ walls: [['#1a1a1e','#000000','#5a0a5a','stone'],['#3a0a0a','#180404','#a01010','stone'],['#6a5a1a','#362e0c','#ffe97a','metal'],['#241a3a','#100a1c','#7a3ae0','panel']],
+  ceil: [8,4,8], floor: [24,8,12], fog: [120,0,20], fogK: 1.2, glow: [255,30,0], blood: '#ff0000',
+  base: { torso: '#0a0a0a', tw: 9, detail: 'shirt', detailCol: '#3a0a0a', limb: '#0a0a0a', head: '#d8d4d0', eyes: 'glow', eyeCol: '#ff0000', maw: 'scream', mawCol: '#200000', tent: true, tentCol: '#1a0303', tents: 6 },
+  vars: [{ hp: 1, sp: 1, sc: 1, ov: {} },
+    { hp: 0.8, sp: 1.3, sc: 0.85, ov: {} },
+    { hp: 1.5, sp: 0.8, sc: 1.2, ov: {} }],
+  kills: ['IT BOWS OUT.', 'EVEN SHADOWS DIE.', 'THE COURT THINS.'] },
+];
+const BOSS_P = { torso: '#000000', tw: 11, bw: 6, detail: 'shirt', detailCol: '#7a0a0a', limb: '#000000',
+  head: '#ffffff', headY: 15, headW: 6, headH: 8, eyes: 'glow', eyeCol: '#ff0000',
+  maw: 'scream', mawCol: '#4a0000', tent: true, tentCol: '#3a0505', tents: 12,
+  extra: 'crown', extraCol: '#8a6a1a' };
+const frameCache = {};
+function getFrames(ti, vi) {
+  const k = ti + ':' + vi;
+  if (!frameCache[k]) {
+    const T = THEMES[ti], V = T.vars[vi % T.vars.length];
+    frameCache[k] = mobPair({ ...T.base, ...(V.ov || {}) });
+  }
+  return frameCache[k];
+}
+let TH = null;     // active theme (set by loadLevel)
+let door = null;   // exit door {mx,my,x,y,open} — sealed until every mob falls
+// (retired slender painter — the per-theme paintMob system above replaces it)
+let deadTex = null;   // corpse sprite — rebuilt per level from its theme (see loadLevel)
+// exit door: ALWAYS a purple portal on every level. Sealed = deep violet behind
+// chains, open = blazing white-violet core (2 frames so it shimmers in 3D).
+const doorShutTex = makeTex(g => {
+  g.fillStyle = '#0e0718'; g.fillRect(0,0,64,64);
+  const gr = g.createLinearGradient(0,0,64,0);
+  gr.addColorStop(0,'#0e0718'); gr.addColorStop(0.5,'#4a1a8a'); gr.addColorStop(1,'#0e0718');
+  g.fillStyle = gr; g.fillRect(6,0,52,64);
+  g.fillStyle = '#6a3ae0';
+  for (let i = 0; i < 24; i++) g.fillRect(8+Math.random()*48, Math.random()*64, 2, 5);
+  g.strokeStyle = '#2a1040'; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(6,6); g.lineTo(58,58); g.moveTo(58,6); g.lineTo(6,58); g.stroke();
+  g.strokeStyle = '#b060ff'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(6,6); g.lineTo(58,58); g.moveTo(58,6); g.lineTo(6,58); g.stroke();
+  g.fillStyle = '#d090ff'; g.fillRect(26,0,12,6); g.fillRect(26,58,12,6);
+});
+function paintDoorOpen(g, shift) {
+  const gr = g.createLinearGradient(0,0,64,0);
+  gr.addColorStop(0,'#1a0530'); gr.addColorStop(0.5,'#e0b0ff'); gr.addColorStop(1,'#1a0530');
+  g.fillStyle = gr; g.fillRect(0,0,64,64);
+  g.fillStyle = '#ffffff'; g.fillRect(26+shift,0,12,64);
+  g.fillStyle = '#c060ff';
+  for (let i = 0; i < 34; i++) g.fillRect(Math.random()*64, Math.random()*64, 2, 5);
+  g.fillStyle = '#f0d0ff';
+  for (let i = 0; i < 12; i++) g.fillRect(24+Math.random()*16, Math.random()*64, 2, 2);
+}
+const doorOpenTex = makeTex(g => paintDoorOpen(g, 0));
+const doorOpenTex2 = makeTex(g => paintDoorOpen(g, 2));
+TEX['D'] = doorShutTex; TEX['E'] = doorOpenTex; TEX['E2'] = doorOpenTex2;
+// floating beacon drawn over the open door in 3D (only after the seal breaks)
+const doorMarkTex = makeTex(g => {
+  g.clearRect(0,0,64,64);
+  g.fillStyle = '#c060ff';
+  g.beginPath(); g.moveTo(32,4); g.lineTo(56,32); g.lineTo(32,60); g.lineTo(8,32); g.closePath(); g.fill();
+  g.fillStyle = '#f0d0ff';
+  g.beginPath(); g.moveTo(32,14); g.lineTo(46,32); g.lineTo(32,50); g.lineTo(18,32); g.closePath(); g.fill();
+  g.fillStyle = '#ffffff';
+  g.beginPath(); g.moveTo(32,24); g.lineTo(38,32); g.lineTo(32,40); g.lineTo(26,32); g.closePath(); g.fill();
+});
+const ammoTex = makeTex(g => {
+  g.clearRect(0,0,64,64);
+  g.fillStyle = '#1a5e1a'; g.fillRect(14,30,36,24);
+  g.fillStyle = '#2e8a2e'; g.fillRect(14,30,36,6);
+  g.fillStyle = '#ffcc00'; g.fillRect(20,40,24,8);
+});
+const medTex = makeTex(g => {
+  g.clearRect(0,0,64,64);
+  g.fillStyle = '#ddd'; g.fillRect(14,30,36,24);
+  g.fillStyle = '#c00'; g.fillRect(28,34,8,16); g.fillRect(22,40,20,5);
+});
+// (sprite table retired — enemies carry their own themed frames in e.spr)
+
+// ============ AUDIO ============
+let AC = null;
+function audio() { if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); return AC; }
+function beep(freq, dur, type='square', vol=0.15, slide=0, delay=0) {
+  try {
+    const ac = audio(), t = ac.currentTime + delay;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(Math.max(25, freq), t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(25, freq + slide), t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + dur);
+  } catch(e) {}
+}
+let _noiseBuf = null;
+function noiseBuf() {
+  if (_noiseBuf) return _noiseBuf;
+  const ac = audio(), b = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.5), ac.sampleRate);
+  const d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return (_noiseBuf = b);
+}
+function shootSound(hi, dur, vol, thump) {
+  hi = hi || 6500; dur = dur || 0.26; vol = vol || 0.55; thump = thump || 110;
+  // layered gunshot: noise crack through a collapsing lowpass + chesty low thump
+  try {
+    const ac = audio(), t = ac.currentTime;
+    const n = ac.createBufferSource(); n.buffer = noiseBuf();
+    n.playbackRate.value = 0.95 + Math.random() * 0.1;
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.Q.value = 0.8;
+    f.frequency.setValueAtTime(hi, t);
+    f.frequency.exponentialRampToValueAtTime(280, t + dur * 0.85);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    n.connect(f); f.connect(g); g.connect(ac.destination);
+    n.start(t); n.stop(t + dur + 0.05);
+    const o = ac.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(thump + Math.random() * 20, t);
+    o.frequency.exponentialRampToValueAtTime(38, t + dur * 0.7);
+    const g2 = ac.createGain();
+    g2.gain.setValueAtTime(vol, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.8);
+    o.connect(g2); g2.connect(ac.destination);
+    o.start(t); o.stop(t + dur);
+  } catch(e) {}
+}
+const sfx = {
+  shoot() { shootSound(6500, 0.26, 0.55, 110); },
+  swing() { beep(1000, 0.12, 'sawtooth', 0.10, -750); },
+  empty() { beep(1200, 0.06, 'square', 0.08); },
+  hit() { beep(300, 0.1, 'square', 0.18, -100); },
+  die() { beep(220, 0.35, 'sawtooth', 0.22, -190); },
+  hurt() { beep(140, 0.2, 'sawtooth', 0.25, -60); },
+  pickup() { beep(660, 0.09, 'square', 0.15); setTimeout(()=>beep(880,0.12,'square',0.15),90); },
+  win() { [523,659,784,1046].forEach((f,i)=>beep(f,0.2,'square',0.18,0,i*0.14)); },
+  scream() { beep(900, 0.7, 'sawtooth', 0.07, -650); beep(450, 0.9, 'triangle', 0.06, -300, 0.1); },
+  drone() { beep(55, 1.6, 'sawtooth', 0.08, -12); beep(58, 1.6, 'triangle', 0.07, 8); },
+  whisper() { for (let i=0;i<5;i++) beep(1800+Math.random()*1200, 0.05, 'square', 0.03, 0, i*0.07); },
+  heart() { beep(58, 0.12, 'sine', 0.3); beep(52, 0.14, 'sine', 0.28, 0, 0.18); },
+};
+
+// ============ INPUT ============
+const keys = {};
+addEventListener('keydown', e => {
+  if (e.code === 'KeyB' && !e.repeat && started && player.alive && !won) { toggleStore(); return; }
+  if (e.code === 'Escape' && storeOpen) { closeStore(); return; }
+  if (storeOpen) { if (['Space','ArrowUp','ArrowDown'].includes(e.code)) e.preventDefault(); return; }
+  keys[e.code] = true;
+  if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  if (e.code === 'Space') tryShoot();
+  if (e.code === 'KeyM') showMap = !showMap;
+  if (e.code === 'KeyE' && !e.repeat) tryDoor();
+  const slot = { Digit1: 'pump', Digit2: 'ar', Digit3: 'uzi', Digit4: 'sniper', Digit5: 'dual', Digit6: 'axe' }[e.code];
+  if (slot) selectWeapon(slot);
+  if (e.code === 'KeyQ' && !e.repeat) cycleWeapon();
+  if (e.code === 'KeyL') {
+    if (document.pointerLockElement === canvas) document.exitPointerLock?.();
+    else lockPointer();
+  }
+  if (e.code === 'KeyR' && (!player.alive || won)) restart();
+});
+addEventListener('keyup', e => keys[e.code] = false);
+function lockPointer() {
+  try {
+    const p = canvas.requestPointerLock?.({ unadjustedMovement: true });
+    if (p && p.catch) p.catch(() => { try { canvas.requestPointerLock?.(); } catch(e) {} });
+  } catch(e) { try { canvas.requestPointerLock?.(); } catch(e2) {} }
+}
+let dragging = false, lastMX = 0, lastFreeMX = null;
+canvas.addEventListener('mousedown', (e) => {
+  audio();
+  if (!started || !player.alive || won) return;
+  dragging = true; lastMX = e.clientX; firing = true;
+  tryShoot();
+});
+addEventListener('mouseup', () => { dragging = false; firing = false; });
+document.addEventListener('mousemove', e => {
+  if (!started || !player.alive || won) { lastFreeMX = null; return; }
+  if (document.pointerLockElement === canvas) {
+    player.a -= (e.movementX || 0) * 0.0028;
+    lastFreeMX = null;
+  } else {
+    // trackpad-friendly, inverted: swipe right -> turn left
+    let dx = e.movementX || 0;
+    if (!dx && lastFreeMX !== null && e.clientX !== undefined) dx = e.clientX - lastFreeMX;
+    if (e.clientX !== undefined) lastFreeMX = e.clientX;
+    if (dx) player.a -= dx * 0.004;
+  }
+});
+addEventListener('wheel', e => {
+  if (!started || !player.alive || won) return;
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+    player.a -= e.deltaX * 0.003;
+    e.preventDefault();
+  }
+}, { passive: false });
+
+const CREEPY_MSGS = ['did you hear that?', 'IT SEES YOU', 'don\'t look behind you', 'the walls bleed here', 'it knows your name', '...it watches...', 'no escape. only deeper.'];
+document.getElementById('playBtn').addEventListener('click', () => {
+  audio(); started = true;
+  document.getElementById('overlay').classList.add('hidden');
+  showMsg('SWIPE TO LOOK — CLICK TO SHOOT', 3);
+});
+
+function restart() {
+  if (won) { levelIdx = 0; player.hp = 100; player.ammo = 25; }
+  else { player.hp = 100; player.ammo = Math.max(player.ammo, 15 + levelIdx * 2); }
+  player.alive = true; won = false; transition = 0; particles = [];
+  hurtFlash = 0; killFlash = 0; shakeT = 0; knifeSwing = 0; knifeCD = 0; wcd = 0; firing = false;
+  loadLevel(levelIdx);
+  document.getElementById('overlay').classList.add('hidden');
+  showMsg('LEVEL ' + (levelIdx + 1) + ': ' + LEVELS[levelIdx].name + ' — THE DOOR OPENS WHEN THEY ALL FALL', 2.5);
+}
+
+// ============ SHOOTING ============
+function losClear(x0, y0, x1, y1) {
+  const dx = x1-x0, dy = y1-y0, d = Math.hypot(dx,dy), steps = Math.ceil(d*8);
+  for (let i=1;i<steps;i++) { const t=i/steps; if (isWall(x0+dx*t, y0+dy*t)) return false; }
+  return true;
+}
+function burst(n, big, col) {
+  for (let i = 0; i < n; i++) particles.push({
+    x: W/2 + (Math.random()-0.5)*60, y: H/2 + (Math.random()-0.5)*40,
+    vx: (Math.random()-0.5)*(big?500:300), vy: (Math.random()-0.7)*(big?400:250),
+    life: 0.5 + Math.random()*0.4, age: 0, s: 2 + Math.random()*(big?5:3), c: col || '#c00',
+  });
+}
+function tryShoot() {
+  if (!started || !player.alive || won || transition > 0 || storeOpen) return;
+  if (cur === 'axe') { fireAxe(); return; }
+  if (player.ammo <= 0) { knifeAttack(); return; }
+  fireGun();
+}
+function fireGun() {
+  const w = WEAPONS[cur];
+  if (wcd > 0) return;
+  if (player.ammo <= 0) { knifeAttack(); return; }
+  const shots = w.dual ? Math.min(2, player.ammo) : 1;
+  player.ammo -= shots; wcd = w.cd;
+  flash = 0.09; shakeT = 0.08; shakeMag = 3 + (w.dual ? 2 : 0);
+  shootSound(w.hi, w.dur, w.vol, w.thump);
+  if (w.dual) setTimeout(() => { try { shootSound(w.hi * 1.06, w.dur, w.vol * 0.9, w.thump); } catch (e) {} }, 60);
+  burst(3, false, 'rgba(170,170,170,.7)');   // powder smoke curling up from the muzzle
+  if (cur === 'sniper') { shakeT = 0.2; shakeMag = 10; }
+  if (player.ammo === 0) showMsg('OUT OF AMMO — KNIFE OUT! GET CLOSE', 2.2);
+  for (let s = 0; s < shots; s++) {
+    const jitter = w.dual ? (s === 0 ? -0.035 : 0.035) : 0;
+    let best = null, bestD = 1e9;
+    for (const e of enemies) {
+      if (!e.alive) continue;
+      const dx = e.x - player.x, dy = e.y - player.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist > w.range) continue;
+      let ang = Math.atan2(dy, dx) - player.a + jitter;
+      while (ang > Math.PI) ang -= 2*Math.PI; while (ang < -Math.PI) ang += 2*Math.PI;
+      const tol = (0.09 + 0.35/dist) * w.tol * (e.kind === 'boss' ? 1.6 : 1);
+      if (Math.abs(ang) < tol && losClear(player.x, player.y, e.x, e.y) && dist < bestD) { best = e; bestD = dist; }
+    }
+    if (best) {
+      const dd = bestD < 2 ? w.dmg[0] : bestD < 4 ? w.dmg[1] : w.dmg[2];
+      hurtEnemy(best, dd, false);
+    }
+  }
+  updateHUD();
+}
+function fireAxe() {
+  const w = WEAPONS.axe;
+  if (wcd > 0) return;
+  if (axes <= 0) { sfx.empty(); showMsg('NO AXES — PRESS B FOR STORE', 1.6); return; }
+  axes--; wcd = w.cd; knifeSwing = 0.25; sfx.swing();
+  shakeT = Math.max(shakeT, 0.08); shakeMag = 3;
+  let best = null, bestD = 1e9;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const dx = e.x - player.x, dy = e.y - player.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > w.range) continue;
+    let ang = Math.atan2(dy, dx) - player.a;
+    while (ang > Math.PI) ang -= 2*Math.PI; while (ang < -Math.PI) ang += 2*Math.PI;
+    const tol = (0.09 + 0.35/dist) * w.tol;
+    if (Math.abs(ang) < tol && losClear(player.x, player.y, e.x, e.y) && dist < bestD) { best = e; bestD = dist; }
+  }
+  if (best) {
+    const dd = bestD < 2 ? w.dmg[0] : bestD < 4 ? w.dmg[1] : w.dmg[2];
+    hurtEnemy(best, dd, false);
+  }
+  updateHUD();
+}
+function selectWeapon(id) {
+  if (!owned[id]) { showMsg(WEAPONS[id].name + ' — ' + WEAPONS[id].price + '◉ AT THE STORE (B)', 1.6); return; }
+  if (id === 'axe' && axes <= 0) showMsg('NO AXES LEFT — RESTOCK (B)', 1.6);
+  cur = id; showMsg(WEAPONS[id].name, 1); updateHUD();
+}
+function cycleWeapon() {
+  const ids = Object.keys(WEAPONS).filter(id => owned[id]);
+  cur = ids[(ids.indexOf(cur) + 1) % ids.length];
+  showMsg(WEAPONS[cur].name, 1); updateHUD();
+}
+function hurtEnemy(e, dmg, isKnife) {
+  e.hp -= dmg; sfx.hit(); e.anim = 0.12;
+  burst(isKnife ? 8 : 12, false, e.blood);
+  if (e.hp <= 0 && e.alive) {
+    e.alive = false; kills++; sfx.die(); burst(30, true, e.blood); killFlash = 0.18;
+    const reward = e.kind === 'boss' ? 100 : 10 + levelIdx * 3;
+    coins += reward;
+    showMsg((e.kind === 'boss' ? e.kills[0] : e.kills[Math.floor(Math.random()*e.kills.length)]) + '  +' + reward + '◉', 1.4);
+    if (kills >= totalKills) {
+      if (door) door.open = true;
+      sfx.win();
+      showMsg(levelIdx >= LEVELS.length - 1 ? 'THE KING IS DEAD — THE LAST DOOR STANDS OPEN' : 'THE SEAL BREAKS — FIND THE DOOR (E)', 3);
+    }
+  }
+}
+function knifeAttack() {
+  if (knifeCD > 0) return;
+  knifeCD = 0.38; knifeSwing = 0.25;
+  sfx.swing();
+  shakeT = Math.max(shakeT, 0.06); shakeMag = 2;
+  let best = null, bestD = 1e9;
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    const dx = e.x - player.x, dy = e.y - player.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 2.1) continue;                       // blade range: get close
+    let ang = Math.atan2(dy, dx) - player.a;
+    while (ang > Math.PI) ang -= 2*Math.PI; while (ang < -Math.PI) ang += 2*Math.PI;
+    if (Math.abs(ang) < 0.4 && losClear(player.x, player.y, e.x, e.y) && dist < bestD) { best = e; bestD = dist; }
+  }
+  if (best) hurtEnemy(best, 50, true);
+  updateHUD();
+}
+function tryDoor() {
+  if (!started || !player.alive || won || transition > 0 || !door) return;
+  if (Math.hypot(door.x - player.x, door.y - player.y) > 1.7) return;
+  if (!door.open) { sfx.empty(); showMsg(`SEALED — ${totalKills - kills} STILL HUNT YOU`, 1.6); return; }
+  if (levelIdx >= LEVELS.length - 1) { won = true; sfx.win(); gameOver(true); return; }
+  sfx.win(); transition = 1.6; showMsg('THE DOOR TAKES YOU...', 1.6);
+}
+
+// ============ UPDATE ============
+function update(dt) {
+  if (!started || !player.alive || won) return;
+  elapsed += dt;
+  if (bannerT > 0) bannerT -= dt;
+  if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) document.getElementById('msg').textContent=''; }
+  // particles always tick
+  for (const q of particles) { q.age += dt; q.x += q.vx*dt; q.y += q.vy*dt; q.vy += 700*dt; }
+  particles = particles.filter(q => q.age < q.life);
+  if (knifeCD > 0) knifeCD -= dt;
+  if (knifeSwing > 0) knifeSwing -= dt;
+  if (wcd > 0) wcd -= dt;
+  if (transition > 0) {
+    transition -= dt;
+    if (flash > 0) flash -= dt;
+    if (transition <= 0) {
+      levelIdx++;
+      player.hp = Math.min(100, player.hp + 25);
+      player.ammo += 8;
+      coins += 50 + levelIdx * 15;
+      if (owned.axe) axes += 1;
+      loadLevel(levelIdx);
+      showMsg('LEVEL ' + (levelIdx+1) + ': ' + LEVELS[levelIdx].name + ' — ' + totalKills + ' GUARD THE DOOR — +' + (50 + levelIdx*15) + '◉ (B = STORE)', 3);
+    }
+    updateHUD(); return;
+  }
+  if (storeOpen) return;
+  if (firing && WEAPONS[cur].auto && wcd <= 0 && player.ammo > 0) fireGun();
+  const run = (keys['ShiftLeft']||keys['ShiftRight']) ? 1.7 : 1;
+  const sp = 3.4 * run * dt;
+  let mx = 0, my = 0;
+  if (keys['KeyW']||keys['ArrowUp']) { mx += Math.cos(player.a)*sp; my += Math.sin(player.a)*sp; }
+  if (keys['KeyS']||keys['ArrowDown']) { mx -= Math.cos(player.a)*sp; my -= Math.sin(player.a)*sp; }
+  if (keys['KeyA']) { mx += Math.cos(player.a-Math.PI/2)*sp; my += Math.sin(player.a-Math.PI/2)*sp; }
+  if (keys['KeyD']) { mx += Math.cos(player.a+Math.PI/2)*sp; my += Math.sin(player.a+Math.PI/2)*sp; }
+  if (keys['ArrowLeft']) player.a -= 2.4*dt;
+  if (keys['ArrowRight']) player.a += 2.4*dt;
+  if (!isWall(player.x+mx*3, player.y)) player.x += mx;
+  if (!isWall(player.x, player.y+my*3)) player.y += my;
+
+  const L = LEVELS[levelIdx];
+  for (const e of enemies) {
+    if (!e.alive) continue;
+    if (e.anim > 0) e.anim -= dt;
+    if (e.cool > 0) e.cool -= dt;
+    const dx = player.x-e.x, dy = player.y-e.y, d = Math.hypot(dx,dy) || 0.001;
+    if (d < 0.75) {
+      // close enough to maul — but solid walls still protect you
+      if (e.cool <= 0 && losClear(e.x, e.y, player.x, player.y)) {
+        player.hp -= (11 + Math.random()*14) * e.dmg; e.cool = e.kind === 'boss' ? 0.45 : 0.75;
+        hurtFlash = 0.5; shakeT = 0.25; shakeMag = 9; sfx.hurt();
+        if (player.hp <= 0) { player.hp = 0; player.alive = false; gameOver(false); }
+      }
+    } else {
+      // relentless: always closing in, sidestepping around corners when stuck
+      let mx = dx/d, my = dy/d;
+      if (e.detourT > 0) { const t = mx; mx = -my * e.detour; my = t * e.detour; }
+      else if (d < 3) { mx *= 1.5; my *= 1.5; }
+      const ox = e.x, oy = e.y, s = e.speed*dt;
+      if (!isWall(e.x+mx*s, e.y)) e.x += mx*s;
+      if (!isWall(e.x, e.y+my*s)) e.y += my*s;
+      if (Math.hypot(e.x-ox, e.y-oy) < s*0.3) {
+        e.still = (e.still || 0) + dt;
+        if (e.still > 0.6 && !(e.detourT > 0)) { e.detour = Math.random() < 0.5 ? -1 : 1; e.detourT = 0.9; e.still = 0; }
+      } else e.still = 0;
+    }
+  }
+  for (const p of pickups) {
+    if (p.taken) continue;
+    if (Math.hypot(p.x-player.x, p.y-player.y) < 0.6) {
+      p.taken = true; sfx.pickup();
+      if (p.type === 'ammo') { player.ammo += 10; showMsg('+10 AMMO', 1.5); }
+      else { player.hp = Math.min(100, player.hp+30); showMsg('+30 HEALTH', 1.5); }
+    }
+  }
+  // --- horror ambience ---
+  scareT -= dt;
+  if (scareT <= 0) {
+    const r = Math.random();
+    if (r < 0.35) sfx.drone(); else if (r < 0.6) sfx.scream(); else if (r < 0.85) sfx.whisper();
+    else showMsg(CREEPY_MSGS[Math.floor(Math.random()*CREEPY_MSGS.length)], 2);
+    scareT = Math.max(4, 9 + Math.random()*12 - levelIdx);
+  }
+  // flickering lights-out dips on later levels
+  dipCool -= dt;
+  if (levelIdx >= 3 && dipCool <= 0) { dipT = 0.4 + Math.random()*0.9; dipCool = 10 + Math.random()*16; }
+  if (dipT > 0) dipT -= dt;
+  // heartbeat at low hp
+  if (player.hp < 32 && player.hp > 0) { heartT -= dt; if (heartT <= 0) { sfx.heart(); heartT = 0.9; } }
+  if (flash > 0) flash -= dt;
+  if (hurtFlash > 0) hurtFlash -= dt;
+  if (killFlash > 0) killFlash -= dt;
+  if (shakeT > 0) shakeT -= dt;
+  updateHUD();
+}
+function updateHUD() {
+  document.getElementById('hp').textContent = Math.ceil(player.hp);
+  document.getElementById('am').textContent = player.ammo;
+  document.getElementById('kl').textContent = kills + ' / ' + totalKills;
+  document.getElementById('lv').textContent = (levelIdx+1) + '/' + LEVELS.length;
+  document.getElementById('cn').textContent = coins;
+}
+// ============ STORE (B): coins buy hardware ============
+function openStore() {
+  if (!started || !player.alive || won) return;
+  storeOpen = true; refreshStore();
+  document.getElementById('store').classList.remove('hidden');
+  document.exitPointerLock?.();
+  if (document.activeElement) document.activeElement.blur();
+}
+function closeStore() {
+  storeOpen = false;
+  document.getElementById('store').classList.add('hidden');
+}
+function toggleStore() { storeOpen ? closeStore() : openStore(); }
+function refreshStore() {
+  document.getElementById('storeCoins').textContent = '◉ ' + coins + '   ·   AMMO ' + player.ammo + '   ·   AXES ' + axes + '   ·   HP ' + Math.ceil(player.hp);
+  let s = '';
+  for (const id of ['axe','ar','uzi','dual','sniper']) {
+    const w = WEAPONS[id];
+    const st = !owned[id] ? w.price + '◉' : (cur === id ? 'EQUIPPED' : 'EQUIP');
+    const dis = (!owned[id] && coins < w.price) ? 'disabled' : '';
+    s += `<div class="sItem"><div><b>[${w.key}] ${w.name}</b><br><span>${w.desc}</span></div><button ${dis} onclick="buyWeapon('${id}')">${st}</button></div>`;
+  }
+  s += `<div class="sItem"><div><b>+24 AMMO</b><br><span>feeds pump, AR, UZI, snipers</span></div><button ${coins < 30 ? 'disabled' : ''} onclick="buyAmmo()">30◉</button></div>`;
+  s += `<div class="sItem"><div><b>+3 AXES</b><br><span>needs the throwing axe</span></div><button ${(!owned.axe || coins < 40) ? 'disabled' : ''} onclick="buyAxes()">40◉</button></div>`;
+  s += `<div class="sItem"><div><b>PATCH UP +50 HP</b><br><span>back slaps and morphine</span></div><button ${(player.hp >= 100 || coins < 50) ? 'disabled' : ''} onclick="buyMed()">50◉</button></div>`;
+  document.getElementById('storeItems').innerHTML = s;
+  document.getElementById('storeClose').onclick = closeStore;
+}
+function buyWeapon(id) {
+  const w = WEAPONS[id];
+  if (!owned[id]) {
+    if (coins < w.price) return;
+    coins -= w.price; owned[id] = true;
+    if (id === 'axe') axes += 3;
+    sfx.pickup(); showMsg(w.name + ' PURCHASED — [' + w.key + '] TO WIELD', 2);
+  }
+  cur = id;
+  updateHUD(); refreshStore();
+}
+function buyAmmo() { if (coins < 30) return; coins -= 30; player.ammo += 24; sfx.pickup(); updateHUD(); refreshStore(); }
+function buyAxes() { if (!owned.axe || coins < 40) return; coins -= 40; axes += 3; sfx.pickup(); updateHUD(); refreshStore(); }
+function buyMed() { if (player.hp >= 100 || coins < 50) return; coins -= 50; player.hp = Math.min(100, player.hp + 50); sfx.pickup(); updateHUD(); refreshStore(); }
+function gameOver(win) {
+  document.exitPointerLock?.();
+  const ov = document.getElementById('overlay');
+  ov.classList.remove('hidden');
+  document.getElementById('ovTitle').textContent = win ? 'YOU ESCAPED HELL' : 'YOU DIED';
+  document.getElementById('ovTitle').style.color = win ? '#3f6' : '#f22';
+  document.getElementById('ovText').innerHTML = win
+    ? `All 10 levels cleansed with <b>${Math.ceil(player.hp)} HP</b> left.<br>The dark lets you go. This time.<br>Press R or click below to descend again.`
+    : `Slain on <b>LEVEL ${levelIdx+1} — ${LEVELS[levelIdx].name}</b>. Kills there: <b>${kills}/${totalKills}</b>.<br>Press R or click below to retry this level.`;
+  document.getElementById('playBtn').textContent = 'DESCEND AGAIN';
+  document.getElementById('playBtn').onclick = () => { restart(); };
+}
+
+// ============ RENDER ============
+const zbuf = new Float32Array(NUM_RAYS);
+const doorHit = new Uint8Array(NUM_RAYS);   // 0 = no door, 1 = sealed, 2 = open (for portal glow)
+function castRay(px, py, ang) {
+  const dx = Math.cos(ang), dy = Math.sin(ang);
+  let mapX = Math.floor(px), mapY = Math.floor(py);
+  const dDX = Math.abs(1/(dx||1e-9)), dDY = Math.abs(1/(dy||1e-9));
+  let stepX, stepY, sDX, sDY;
+  if (dx < 0) { stepX=-1; sDX=(px-mapX)*dDX; } else { stepX=1; sDX=(mapX+1-px)*dDX; }
+  if (dy < 0) { stepY=-1; sDY=(py-mapY)*dDY; } else { stepY=1; sDY=(mapY+1-py)*dDY; }
+  let side = 0, type = '1';
+  for (let i=0;i<80;i++) {
+    if (sDX < sDY) { sDX+=dDX; mapX+=stepX; side=0; } else { sDY+=dDY; mapY+=stepY; side=1; }
+    if (mapX<0||mapY<0||mapX>=MW||mapY>=MH) { type='1'; break; }
+    if (door && mapX === door.mx && mapY === door.my) { type = door.open ? 'E' : 'D'; break; }
+    const c = MAP[mapY][mapX];
+    if (c !== '.') { type=c; break; }
+  }
+  let dist = side===0 ? sDX-dDX : sDY-dDY;
+  dist = Math.max(dist, 0.0001);
+  let wallX = side===0 ? py+dist*dy : px+dist*dx;
+  wallX -= Math.floor(wallX);
+  return { dist, side, type, wallX };
+}
+function render() {
+  const L = LEVELS[levelIdx];
+  ctx.save();
+  if (shakeT > 0) ctx.translate((Math.random()-0.5)*shakeMag*2, (Math.random()-0.5)*shakeMag*2);
+  // flicker: faulty hell-lights, worse deeper down
+  let flick = 0.9 + 0.1*Math.sin(elapsed*11) + 0.05*Math.sin(elapsed*47);
+  if (Math.random() < 0.02 + levelIdx*0.006) flick *= 0.55;
+  if (dipT > 0) flick *= 0.25;
+  const C = TH.ceil, F = TH.floor;
+  const cg = ctx.createLinearGradient(0,0,0,H/2);
+  cg.addColorStop(0,'#000000'); cg.addColorStop(1, `rgb(${C[0]},${C[1]},${C[2]})`);
+  ctx.fillStyle = cg; ctx.fillRect(-20,-20,W+40,H/2+20);
+  const fg = ctx.createLinearGradient(0,H/2,0,H);
+  fg.addColorStop(0, `rgb(${F[0]},${F[1]},${F[2]})`); fg.addColorStop(1,'#000');
+  ctx.fillStyle = fg; ctx.fillRect(-20,H/2,W+40,H/2+20);
+
+  for (let i=0;i<NUM_RAYS;i++) {
+    const cam = (i/NUM_RAYS - 0.5) * FOV;
+    const r = castRay(player.x, player.y, player.a + cam);
+    const corr = r.dist * Math.cos(cam);
+    zbuf[i] = corr;
+    doorHit[i] = r.type === 'E' ? 2 : r.type === 'D' ? 1 : 0;
+    const lineH = Math.min(H*4, H / corr);
+    const y0 = (H-lineH)/2;
+    const tx = Math.floor(r.wallX*64);
+    const tex = (r.type === 'E' && Math.floor(elapsed*3) % 2) ? TEX['E2'] : (TEX[r.type] || TEX['1']);
+    let shade = Math.max(0.04, (1 - corr/L.view)) * flick;
+    if (r.side === 1) shade *= 0.65;
+    shade *= (1 - L.dark*0.55);
+    ctx.globalAlpha = 1;
+    ctx.drawImage(tex, tx, 0, 1, 64, i*COL_W, y0, COL_W+1, lineH);
+    ctx.fillStyle = `rgba(0,0,0,${Math.min(0.96, (1-shade)).toFixed(2)})`;
+    ctx.fillRect(i*COL_W, y0, COL_W+1, lineH);
+    // themed distance fog
+    const fogA = Math.min(0.5, corr/L.view*0.45*(TH.fogK || 1));
+    if (fogA > 0.02) { ctx.fillStyle = `rgba(${TH.fog[0]},${TH.fog[1]},${TH.fog[2]},${fogA.toFixed(2)})`; ctx.fillRect(i*COL_W, y0, COL_W+1, lineH); }
+  }
+  ctx.globalAlpha = 1;
+  renderSprites();
+  drawGun();
+  drawRack();
+  // flashlight cone: bright center, devouring edges
+  const fl = ctx.createRadialGradient(W/2, H/2, H*0.12, W/2, H/2, H*0.85);
+  fl.addColorStop(0, 'rgba(0,0,0,0)');
+  fl.addColorStop(1, `rgba(0,0,0,${(0.45 + L.dark*0.4).toFixed(2)})`);
+  ctx.fillStyle = fl; ctx.fillRect(-20,-20,W+40,H+40);
+  // portal aura: the purple door bleeds light through the dark so it can't be missed
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < NUM_RAYS; i++) {
+    if (!doorHit[i]) continue;
+    const open = doorHit[i] === 2;
+    const pa = (open ? 0.32 : 0.16) * (0.7 + 0.3 * Math.sin(elapsed * (open ? 6 : 2.5) + i * 0.05));
+    const pg = ctx.createLinearGradient(0, 0, 0, H);
+    const pc = open ? '225,160,255' : '140,70,230';
+    pg.addColorStop(0, `rgba(${pc},0)`);
+    pg.addColorStop(0.5, `rgba(${pc},${pa.toFixed(3)})`);
+    pg.addColorStop(1, `rgba(${pc},0)`);
+    ctx.fillStyle = pg;
+    ctx.fillRect(i * COL_W, 0, COL_W + 1, H);
+  }
+  ctx.restore();
+  if (hurtFlash > 0) { ctx.fillStyle = `rgba(255,0,0,${(hurtFlash*0.55).toFixed(2)})`; ctx.fillRect(-20,-20,W+40,H+40); }
+  if (killFlash > 0) { ctx.fillStyle = `rgba(255,40,40,${(killFlash*1.2).toFixed(2)})`; ctx.fillRect(-20,-20,W+40,H+40); }
+  // blood splatter particles
+  for (const q of particles) {
+    ctx.globalAlpha = Math.max(0, 1 - q.age/q.life);
+    ctx.fillStyle = q.c || '#c00'; ctx.fillRect(q.x, q.y, q.s, q.s);
+  }
+  ctx.globalAlpha = 1;
+  // level banner
+  if (bannerT > 0) {
+    const a = Math.min(1, bannerT > 3 ? (3.5-bannerT)*2 : bannerT);
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.fillStyle = '#f00'; ctx.font = 'bold 44px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(bannerText, W/2, H/2 - 60);
+    ctx.fillStyle = '#999'; ctx.font = 'italic 18px monospace';
+    ctx.fillText(bannerSub, W/2, H/2 - 30);
+    ctx.textAlign = 'left'; ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  // exit-door guide: appears only once the seal breaks — points at the purple portal
+  if (door && door.open && started && player.alive && !won) {
+    const ddx = door.x - player.x, ddy = door.y - player.y;
+    const ddist = Math.hypot(ddx, ddy);
+    let da = Math.atan2(ddy, ddx) - player.a;
+    while (da > Math.PI) da -= 2*Math.PI; while (da < -Math.PI) da += 2*Math.PI;
+    const pulse = 0.65 + 0.35 * Math.sin(elapsed * 6);
+    ctx.font = 'bold 19px monospace'; ctx.textAlign = 'center';
+    ctx.fillStyle = `rgba(225,150,255,${pulse.toFixed(2)})`;
+    const tag = '◈ EXIT ' + ddist.toFixed(0) + 'm';
+    if (Math.abs(da) > FOV / 2) {
+      if (da > 0) ctx.fillText('▶ ' + tag, W - 100, 40);
+      else ctx.fillText(tag + ' ◀', 100, 40);
+    } else {
+      ctx.fillText(tag, W / 2, 64);
+    }
+    ctx.textAlign = 'left';
+  }
+  if (showMap) drawMap();
+  if (player.ammo <= 5 && player.alive && started) {
+    ctx.fillStyle = '#ff0'; ctx.font = 'bold 16px monospace'; ctx.fillText('LOW AMMO: ' + player.ammo, 12, H-12);
+  }
+}
+function renderSprites() {
+  const L = LEVELS[levelIdx];
+  const list = [];
+  for (const e of enemies) list.push({ x:e.x, y:e.y, d:Math.hypot(e.x-player.x,e.y-player.y), o:e, kind:'enemy' });
+  for (const p of pickups) if (!p.taken) list.push({ x:p.x, y:p.y, d:Math.hypot(p.x-player.x,p.y-player.y), o:p, kind:'pickup' });
+  if (door && door.open) list.push({ x:door.x, y:door.y, d:Math.hypot(door.x-player.x,door.y-player.y), o:null, kind:'door' });
+  list.sort((a,b)=>b.d-a.d);
+  for (const s of list) {
+    const dx = s.x-player.x, dy = s.y-player.y;
+    let a = Math.atan2(dy,dx)-player.a;
+    while (a>Math.PI)a-=2*Math.PI; while(a<-Math.PI)a+=2*Math.PI;
+    if (Math.abs(a) > FOV/2+0.4 || s.d < 0.1) continue;
+    if (!losClear(player.x, player.y, s.x, s.y) && s.d > 1.2) continue;
+    const size = Math.abs(H / s.d);
+    const sx = (0.5 + a/FOV) * W;
+    const sy = H/2;
+    let img = null, sc = 0.7, yLift = 0;
+    if (s.kind==='door') { img = doorMarkTex; sc = 0.4; yLift = size*0.32 + Math.sin(elapsed*4)*size*0.02; }
+    else if (s.kind==='pickup') { img = s.o.type==='ammo' ? ammoTex : medTex; sc = 0.45; }
+    else if (!s.o.alive) img = deadTex;
+    else {
+      const fr = s.o.spr;
+      const rate = s.d < 3 ? 150 : 300;   // close monsters thrash faster
+      img = fr[Math.floor(performance.now()/rate + s.x*3 + s.y*5) % 4];
+      sc = 0.7 * (s.o.scale || 1);
+    }
+    const w = size*sc, h = size*sc;
+    const x0 = sx-w/2, y0 = sy-h/2 + size*0.08 - yLift;
+    const stripes = Math.max(1, Math.floor(w/COL_W));
+    for (let k=0;k<stripes;k++) {
+      const col = Math.floor(x0/COL_W)+k;
+      if (col<0||col>=NUM_RAYS) continue;
+      if (zbuf[col] <= s.d) continue;
+      const tx = Math.floor(k/stripes*64);
+      ctx.drawImage(img, tx, 0, 1, 64, col*COL_W, y0, COL_W+1, h);
+      if (s.kind==='enemy' && s.o.alive && s.o.anim>0) {
+        ctx.fillStyle='rgba(255,255,255,.5)'; ctx.fillRect(col*COL_W, y0, COL_W+1, h);
+      }
+      if (s.kind !== 'door') {   // the beacon shines through darkness undimmed
+        const sh = Math.min(0.85, s.d/L.view + L.dark*0.3);
+        if (sh>0.02) { ctx.fillStyle=`rgba(0,0,0,${sh.toFixed(2)})`; ctx.fillRect(col*COL_W, y0, COL_W+1, h); }
+      }
+    }
+    // head/visceral glow in the dark, colored per haunting
+    if (s.kind==='enemy' && s.o.alive && s.d < 9 && s.o.glow) {
+      const gl = s.o.glow, ga = (1 - s.d/9) * 0.45;
+      ctx.save(); ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `rgba(${gl[0]},${gl[1]},${gl[2]},${ga.toFixed(2)})`;
+      ctx.beginPath(); ctx.arc(sx, y0 + h*0.17, Math.max(2, w*0.12), 0, 7); ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+function drawGun() {
+  if (cur === 'axe') { drawAxe(); return; }
+  if (player.ammo <= 0) { drawKnife(); return; }   // out of ammo: blade comes out
+  if (cur === 'ar') return drawAR();
+  if (cur === 'uzi') return drawUZI();
+  if (cur === 'sniper') return drawSniper();
+  if (cur === 'dual') return drawDual();
+  const cx = W/2, by = H;
+  const sway = Math.sin(elapsed*2.2)*3;
+  const bob = Math.sin(elapsed*3.1)*2;
+  const kick = flash > 0 ? (flash/0.09)*16 : 0;    // recoil dip after each shot
+  const gy = bob + kick;
+  ctx.fillStyle = '#0c0c0e'; ctx.fillRect(cx-52+sway, by-96+gy, 104, 96);          // shadow mass
+  ctx.fillStyle = '#4a2e12'; ctx.fillRect(cx-58+sway, by-70+gy, 26, 70); ctx.fillRect(cx+32+sway, by-70+gy, 26, 70);
+  ctx.fillStyle = '#6a4423'; ctx.fillRect(cx-58+sway, by-70+gy, 8, 70);             // wood highlight
+  ctx.fillStyle = '#241503'; ctx.fillRect(cx+50+sway, by-70+gy, 8, 70);             // wood shade
+  ctx.fillStyle = '#1c1c20'; ctx.fillRect(cx-46+sway, by-130+gy, 92, 66);           // receiver
+  ctx.fillStyle = '#3d3d44'; ctx.fillRect(cx-46+sway, by-130+gy, 92, 8);            // top edge light
+  for (const bx of [-24, 22]) {                                                    // twin barrels
+    ctx.fillStyle = '#33333a'; ctx.fillRect(cx+bx-14+sway, by-132+gy, 28, 122);
+    ctx.fillStyle = '#55555e'; ctx.fillRect(cx+bx-14+sway, by-132+gy, 7, 122);      // barrel shine
+    ctx.fillStyle = '#0a0a0c'; ctx.fillRect(cx+bx-11+sway, by-132+gy, 22, 100);
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(cx+bx+sway, by-132+gy, 11, 4, 0, 0, 7); ctx.fill(); // muzzle ring
+    ctx.fillStyle = '#1e1e22';
+    ctx.beginPath(); ctx.ellipse(cx+bx+sway, by-132+gy, 7, 2.5, 0, 0, 7); ctx.fill();
+  }
+  if (flash > 0) {
+    const fr = flash/0.09;
+    ctx.fillStyle = '#ffdd44';
+    ctx.beginPath(); ctx.arc(cx+sway, by-146+gy, (30+Math.random()*12)*fr+8, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath(); ctx.arc(cx+sway, by-146+gy, 16*fr+6, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(cx+sway, by-146+gy, 7*fr+2, 0, 7); ctx.fill();
+  }
+}
+// chrome 1911-style pistol view model (rear three-quarter): slide, serrations,
+// hammer, rear sights, trigger guard, checkered grip. px = screen x, s = scale.
+function drawPistol(px, s, tilt, gy) {
+  ctx.save(); ctx.translate(px, H - 40 + gy); ctx.rotate(tilt); ctx.scale(s, s);
+  ctx.fillStyle = '#1a1a1c'; ctx.fillRect(-16, 0, 32, 70);            // grip
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 1;                       // checkering
+  for (let y = 6; y < 70; y += 7) { ctx.beginPath(); ctx.moveTo(-16, y); ctx.lineTo(16, y - 6); ctx.stroke(); }
+  ctx.fillStyle = '#2e2e33'; ctx.fillRect(-16, 0, 6, 70);
+  ctx.fillStyle = '#3a3a40'; ctx.fillRect(-14, -26, 28, 28);          // frame
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 5;                       // trigger guard
+  ctx.beginPath(); ctx.moveTo(-14, 0); ctx.quadraticCurveTo(-14, 26, 12, 24); ctx.stroke();
+  ctx.fillStyle = '#888'; ctx.fillRect(-3, -16, 5, 14);              // trigger
+  const sg = ctx.createLinearGradient(-20, 0, 20, 0);                // chrome slide
+  sg.addColorStop(0, '#5a5a62'); sg.addColorStop(0.35, '#eef1f6');
+  sg.addColorStop(0.6, '#9aa0aa'); sg.addColorStop(1, '#3c3c44');
+  ctx.fillStyle = sg; ctx.fillRect(-20, -100, 40, 76);
+  ctx.fillStyle = '#2a2a30';                                         // serrations
+  for (let y = -44; y < -26; y += 6) { ctx.fillRect(-20, y, 8, 3); ctx.fillRect(12, y, 8, 3); }
+  ctx.fillStyle = '#1c1c20';                                         // rear sights
+  ctx.fillRect(-12, -32, 8, 8); ctx.fillRect(4, -32, 8, 8);
+  ctx.fillStyle = '#888'; ctx.fillRect(-18, -24, 7, 18);             // hammer
+  ctx.fillStyle = '#ddd'; ctx.fillRect(-18, -24, 7, 4);
+  ctx.fillStyle = '#050507'; ctx.fillRect(-14, -100, 28, 5);         // muzzle
+  ctx.fillStyle = '#000'; ctx.fillRect(-8, -100, 16, 3);
+  ctx.restore();
+}
+function pistolFlash(px, tilt, gy, r) {
+  ctx.fillStyle = '#ffdd66';
+  ctx.beginPath(); ctx.arc(px + tilt*70, H - 150 + gy, r, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ff8800';
+  ctx.beginPath(); ctx.arc(px + tilt*70, H - 150 + gy, r*0.55, 0, 7); ctx.fill();
+}
+function drawDual() {
+  const sway = Math.sin(elapsed*2.2)*3;
+  const gy = Math.sin(elapsed*3.1)*2 + (flash > 0 ? (flash/0.09)*14 : 0);
+  drawPistol(W/2 - 95 + sway, 0.95, -0.13, gy);
+  drawPistol(W/2 + 95 + sway, 0.95, 0.13, gy);
+  if (flash > 0) {
+    const fr = flash/0.09;
+    pistolFlash(W/2 - 95 + sway, -0.13, gy, 26*fr+8);
+    pistolFlash(W/2 + 95 + sway, 0.13, gy, 26*fr+8);
+  }
+  ctx.font = 'bold 15px monospace'; ctx.textAlign = 'left';
+  ctx.fillStyle = player.ammo > 1 ? '#ffcc00' : '#ff3333';
+  ctx.fillText('2× CHROME  [5]', W/2 - 95 + sway, H - 8);
+}
+function drawAR() {
+  const cx = W/2, by = H, sway = Math.sin(elapsed*2.2)*3;
+  const gy = Math.sin(elapsed*3.1)*2 + (flash > 0 ? (flash/0.09)*14 : 0);
+  ctx.fillStyle = '#141416'; ctx.fillRect(cx-34+sway, by-104+gy, 68, 104);
+  ctx.fillStyle = '#3d3d46'; ctx.fillRect(cx-34+sway, by-104+gy, 68, 10);
+  ctx.fillStyle = '#3a2c16'; ctx.fillRect(cx-26+sway, by-64+gy, 20, 40);
+  ctx.fillStyle = '#1e1e24'; ctx.fillRect(cx-8+sway, by-160+gy, 14, 70);
+  ctx.fillStyle = '#565660'; ctx.fillRect(cx-8+sway, by-160+gy, 4, 70);
+  ctx.fillStyle = '#222228'; ctx.fillRect(cx-12+sway, by-60+gy, 22, 34);
+  ctx.fillStyle = '#000'; ctx.fillRect(cx-4+sway, by-118+gy, 6, 16);
+  if (flash > 0) { const fr = flash/0.09;
+    ctx.fillStyle = '#ffe97a'; ctx.beginPath(); ctx.arc(cx-1+sway, by-168+gy, 20*fr+6, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ff9a00'; ctx.beginPath(); ctx.arc(cx-1+sway, by-168+gy, 10*fr+3, 0, 7); ctx.fill(); }
+}
+function drawUZI() {
+  const cx = W/2, by = H, sway = Math.sin(elapsed*2.2)*3;
+  const gy = Math.sin(elapsed*3.1)*2 + (flash > 0 ? (flash/0.09)*10 : 0);
+  ctx.fillStyle = '#181818'; ctx.fillRect(cx-30+sway, by-84+gy, 60, 84);
+  ctx.fillStyle = '#3d3d44'; ctx.fillRect(cx-30+sway, by-84+gy, 60, 7);
+  ctx.fillStyle = '#222'; ctx.fillRect(cx-9+sway, by-108+gy, 18, 30);
+  ctx.fillStyle = '#5a5a64'; ctx.fillRect(cx-9+sway, by-108+gy, 5, 30);
+  ctx.fillStyle = '#2c2c30'; ctx.fillRect(cx-11+sway, by-52+gy, 22, 40);
+  ctx.fillStyle = '#4a2e12'; ctx.fillRect(cx-24+sway, by-40+gy, 12, 28);
+  if (flash > 0) { const fr = flash/0.09;
+    ctx.fillStyle = '#ffe97a'; ctx.beginPath(); ctx.arc(cx+sway, by-114+gy, 15*fr+5, 0, 7); ctx.fill(); }
+}
+function drawSniper() {
+  const cx = W/2, by = H, sway = Math.sin(elapsed*2.2)*3;
+  const gy = Math.sin(elapsed*3.1)*2 + (flash > 0 ? (flash/0.09)*20 : 0);
+  ctx.fillStyle = '#12140f'; ctx.fillRect(cx-26+sway, by-100+gy, 52, 100);
+  ctx.fillStyle = '#3d4432'; ctx.fillRect(cx-26+sway, by-100+gy, 52, 7);
+  ctx.fillStyle = '#1a1a1e'; ctx.fillRect(cx-5+sway, by-196+gy, 10, 110);
+  ctx.fillStyle = '#50505a'; ctx.fillRect(cx-5+sway, by-196+gy, 3, 110);
+  ctx.fillStyle = '#000'; ctx.fillRect(cx-9+sway, by-140+gy, 18, 10);
+  ctx.strokeStyle = '#0a0a0c'; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.moveTo(cx-16+sway, by-132+gy); ctx.lineTo(cx+16+sway, by-132+gy); ctx.stroke();
+  ctx.fillStyle = '#1e2a3a'; ctx.beginPath(); ctx.arc(cx+sway, by-132+gy, 11, 0, 7); ctx.fill();
+  ctx.fillStyle = '#5a7a9a'; ctx.beginPath(); ctx.arc(cx+sway, by-132+gy, 6, 0, 7); ctx.fill();
+  ctx.fillStyle = '#cfe8ff'; ctx.beginPath(); ctx.arc(cx-2+sway, by-134+gy, 2, 0, 7); ctx.fill();
+  if (flash > 0) { const fr = flash/0.09;
+    ctx.fillStyle = '#fff2b0'; ctx.beginPath(); ctx.arc(cx+sway, by-204+gy, 30*fr+8, 0, 7); ctx.fill();
+    ctx.fillStyle = '#ff7a00'; ctx.beginPath(); ctx.arc(cx+sway, by-204+gy, 15*fr+4, 0, 7); ctx.fill(); }
+}
+function drawAxe() {
+  const p = knifeSwing > 0 ? knifeSwing / 0.25 : 0;
+  const sweeping = p > 0;
+  const bx = W/2 + 90, by = H - 70 + Math.sin(elapsed*3.1)*2 - (sweeping ? (1-p)*140 : 0);
+  ctx.save(); ctx.translate(bx, by);
+  ctx.rotate(sweeping ? -0.5 + (1-p)*5 : 0.5 + Math.sin(elapsed*2.2)*0.03);
+  ctx.strokeStyle = '#5a3a1a'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 60); ctx.lineTo(0, -40); ctx.stroke();
+  ctx.fillStyle = '#9aa0aa';
+  ctx.beginPath(); ctx.moveTo(0,-54); ctx.lineTo(-46,-30); ctx.lineTo(-38,2); ctx.lineTo(0,-8); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0,-54); ctx.lineTo(46,-30); ctx.lineTo(38,2); ctx.lineTo(0,-8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#cdd2da';
+  ctx.beginPath(); ctx.moveTo(0,-54); ctx.lineTo(-46,-30); ctx.lineTo(-40,-22); ctx.lineTo(0,-44); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.font = 'bold 15px monospace'; ctx.textAlign = 'left';
+  ctx.fillStyle = axes > 0 ? '#ffcc00' : '#ff3333';
+  ctx.fillText('AXES: ' + axes + '  [6]', bx - 60, H - 10);
+}
+function drawRack() {
+  ctx.font = 'bold 13px monospace'; ctx.textAlign = 'left';
+  let wy = H - 122;
+  for (const id of ['pump','ar','uzi','sniper','dual','axe']) {
+    const w = WEAPONS[id], has = owned[id];
+    ctx.fillStyle = !has ? '#3d3d3d' : (cur === id ? '#ffcc00' : '#999999');
+    ctx.fillText(w.key + ' ' + w.name + (has ? (id === 'axe' ? ' x' + axes : '') : ' — ' + w.price + 'c'), 12, wy);
+    wy += 17;
+  }
+  ctx.textAlign = 'left';
+}
+function drawKnife() {
+  // last-resort blade, held low-right; sweeps across the screen on each click
+  const p = knifeSwing > 0 ? knifeSwing / 0.25 : 0;   // 1 -> 0 during swing
+  const sweeping = p > 0;
+  const bx = W/2 + 130 - (sweeping ? (1 - p) * 260 : 0), by = H - 24 + Math.sin(elapsed*3.1)*2;
+  if (sweeping && p > 0.3 && p < 0.92) {
+    ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(W/2, H + 40, 220, -1.1, -0.4); ctx.stroke();
+  }
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.rotate(sweeping ? -0.7 + (1 - p) * 1.1 : -0.3 + Math.sin(elapsed*2.2)*0.03);
+  ctx.fillStyle = '#b8bcc4';                            // blade
+  ctx.beginPath(); ctx.moveTo(0,-8); ctx.lineTo(-150,-4); ctx.lineTo(-150,5); ctx.lineTo(0,8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#eef1f6'; ctx.fillRect(-144,-6,128,3); // shine
+  ctx.fillStyle = '#8a0f0f'; ctx.fillRect(-150,-4,10,9);  // old blood near tip
+  ctx.fillStyle = '#3a3a3a'; ctx.fillRect(-2,-13,9,26);   // guard
+  ctx.fillStyle = '#4a2e12'; ctx.fillRect(7,-7,48,14);    // grip
+  ctx.fillStyle = '#241503';
+  for (let i=0;i<3;i++) ctx.fillRect(14+i*13,-7,4,14);
+  ctx.restore();
+  ctx.fillStyle = '#c8a080';                             // fist on grip
+  ctx.fillRect(bx+8, by-12, 26, 24);
+}
+function drawMap() {
+  const s = Math.max(3, Math.min(6, Math.floor(220 / MW)));
+  const ox = W - MW*s - 10, oy = 10;
+  ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(ox-4, oy-4, MW*s+8, MH*s+8);
+  for (let y=0;y<MH;y++) for (let x=0;x<MW;x++) {
+    if (MAP[y][x]!=='.') { ctx.fillStyle='#4a4a4a'; ctx.fillRect(ox+x*s, oy+y*s, s-1, s-1); }
+  }
+  for (const p of pickups) if (!p.taken) { ctx.fillStyle = p.type==='ammo'?'#0f0':'#fff'; ctx.fillRect(ox+p.x*s-1, oy+p.y*s-1, 3, 3); }
+  for (const e of enemies) if (e.alive) { ctx.fillStyle = e.kind==='boss' ? '#f0f' : '#f00'; ctx.beginPath(); ctx.arc(ox+e.x*s, oy+e.y*s, e.kind==='boss'?4:2.5, 0, 7); ctx.fill(); }
+  if (door) { const dp = 0.6 + 0.4*Math.sin(elapsed*5); ctx.fillStyle = door.open ? `rgba(230,150,255,${dp.toFixed(2)})` : `rgba(150,70,230,${(dp*0.85).toFixed(2)})`; const ds = s+2; ctx.fillRect(ox+door.mx*s-1, oy+door.my*s-1, ds, ds); }
+  ctx.fillStyle='#0ff'; ctx.beginPath(); ctx.arc(ox+player.x*s, oy+player.y*s, 3, 0, 7); ctx.fill();
+  ctx.strokeStyle='#0ff'; ctx.beginPath(); ctx.moveTo(ox+player.x*s, oy+player.y*s);
+  ctx.lineTo(ox+(player.x+Math.cos(player.a)*1.5)*s, oy+(player.y+Math.sin(player.a)*1.5)*s); ctx.stroke();
+  ctx.fillStyle = '#c6f'; ctx.font = 'bold 11px monospace';
+  ctx.fillText('LVL ' + (levelIdx+1) + ' ' + LEVELS[levelIdx].name, ox, oy + MH*s + 14);
+}
+
+// ============ LOOP ============
+document.getElementById('ovText').innerHTML =
+  `10 hand-built levels, 10 haunted places: a lab, a dead city, a chapel, a school, sewers, a foundry, a manor, a hospital, a pyramid...<br>each with its own monsters. Something <b style="color:#f44">crowned</b> waits on level 10.<br><br>` +
+  `<b>WASD</b> move &nbsp;·&nbsp; <b>MOUSE / SWIPE</b> look (inverted) &nbsp;·&nbsp; <b>CLICK / SPACE</b> shoot &nbsp;·&nbsp; <b>SHIFT</b> run &nbsp;·&nbsp; <b>E</b> exit door<br>` +
+  `Grab <span style="color:#3f6">green ammo</span> and <span style="color:#fff">white medkits</span>. Run dry and the <b>knife</b> comes out — get close. Slay everything, then walk to the <b>door</b> and press <b>E</b>. Headphones recommended. Good luck.`;
+loadLevel(0);
+updateHUD();
+let last = performance.now();
+function loop(t) {
+  const dt = Math.min(0.05, (t-last)/1000); last = t;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
